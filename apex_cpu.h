@@ -22,6 +22,78 @@ typedef struct APEX_Instruction
     int imm;
 } APEX_Instruction;
 
+typedef struct IQ_Entry
+{
+    int allocated_bit;
+    int fu_type;
+    int literal;
+    int src1_valid_bit;
+    int src1_tag;
+    int src1_value;
+    int src2_valid_bit;
+    int src2_tag;
+    int src2_value;
+    int dest;
+}IQ_Entry;
+
+typedef struct LSQ_Entry
+{
+    int established_bit;
+    int lost;
+    int mem_valid_bit;
+    int mem_address;
+    int dest_reg_address;
+    int src_valid_bit;
+    int src_tag;
+    int src_value;
+    int rob_index;
+}LSQ_Entry;
+
+typedef struct ROB_Entry
+{
+    int established_bit;
+    int instruction_type;
+    int pc_value;
+    int dest_phy_reg;
+    int prev_phy_reg;
+    int dest_arch_reg;
+    int lsq_index;
+    int mem_error_code;
+}ROB_Entry;
+
+typedef struct BTB_Entry
+{
+    int pc_value;
+    int target_address;
+}BTB_Entry;
+
+typedef struct IQ
+{
+    IQ_Entry *entry[IQ_SIZE];
+    int head;
+    int tail;
+}IQ;
+
+typedef struct LSQ
+{
+    LSQ_Entry *entry[LSQ_SIZE];
+    int head;
+    int tail;
+}LSQ;
+
+typedef struct ROB
+{
+    ROB_Entry *entry[ROB_SIZE];
+    int head;
+    int tail;
+}ROB;
+
+typedef struct BTB
+{
+    BTB_Entry *entry[BTB_SIZE];
+    int tail;
+}BTB;
+
 /* Model of CPU stage latch */
 typedef struct CPU_Stage
 {
@@ -59,7 +131,78 @@ typedef struct APEX_CPU
     CPU_Stage execute;
     CPU_Stage memory;
     CPU_Stage writeback;
+
+    IQ *iq;
+    LSQ *lsq;
+    ROB *rob;
+    BTB *btb;
 } APEX_CPU;
+
+//IQ
+void addIQEntry(
+    int allocated_bit,
+    int fu_type,
+    int literal,
+    int src1_valid_bit,
+    int src1_tag,
+    int src1_value,
+    int src2_valid_bit,
+    int src2_tag,
+    int src2_value,
+    int dest,
+    APEX_CPU *cpu
+    );
+
+IQ_Entry* getIQEntry(APEX_CPU *cpu);
+int isIQFull(APEX_CPU *cpu);
+int isIQEmpty(APEX_CPU *cpu);
+int isIQEntryReady(IQ_Entry *entry);
+void shiftIQElements(APEX_CPU *cpu, int pos);
+void updateIQEntry(APEX_CPU *cpu, int src_tag, int src_value);
+
+//LSQ
+void addLSQEntry(
+    int established_bit,
+    int lost,//1 for load, 0 for store
+    int mem_valid_bit,
+    int mem_address,
+    int dest_reg_address,
+    int src_valid_bit,
+    int src_tag,
+    int src_value,
+    int rob_index,
+    APEX_CPU *cpu
+);
+LSQ_Entry* getLSQEntry(APEX_CPU *cpu);
+int isLSQFull(APEX_CPU *cpu);
+int isLSQEmpty(APEX_CPU *cpu);
+int isLSQEntryReady(LSQ_Entry *entry);
+LSQ_Entry* getLSQEntry(APEX_CPU *cpu);
+void updateLSQEntry(APEX_CPU *cpu, int src_tag, int src_value);
+
+
+//ROB
+void addROBEntry(
+    int established_bit,
+    int instruction_type,
+    int pc_value,
+    int dest_phy_reg,
+    int prev_phy_reg,
+    int dest_arch_reg,
+    int lsq_index,
+    int mem_error_code,
+    APEX_CPU *cpu
+);
+ROB_Entry* getROBEntry(APEX_CPU *cpu);
+int isROBFull(APEX_CPU *cpu);
+int isROBEmpty(APEX_CPU *cpu);
+int isROBEntryReady(ROB_Entry *entry);
+ROB_Entry* getROBEntry(APEX_CPU *cpu);
+void updateROBEntry(APEX_CPU *cpu, int src_tag, int src_value);
+
+//BTB
+void addBTBEntry(int pc_value, int target_address, APEX_CPU *cpu);
+BTB_Entry* getBTBEntry(int pc_value, APEX_CPU *cpu);
 
 APEX_Instruction *create_code_memory(const char *filename, int *size);
 APEX_CPU *APEX_cpu_init(const char *filename);

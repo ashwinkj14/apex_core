@@ -18,6 +18,11 @@
 /* Size of integer register file */
 #define REG_FILE_SIZE 16
 
+#define IQ_SIZE 8
+#define LSQ_SIZE 4
+#define ROB_SIZE 12
+#define BTB_SIZE 4
+
 /* Numeric OPCODE identifiers for instructions */
 #define OPCODE_ADD 0x0
 #define OPCODE_SUB 0x1
