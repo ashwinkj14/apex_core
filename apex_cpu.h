@@ -253,11 +253,11 @@ void addROBEntry(
     int mem_error_code,
     APEX_CPU *cpu
 );
-ROB_Entry* getROBEntry(APEX_CPU *cpu);
+ROB_Entry *getROBHead(APEX_CPU *cpu);
+void removeROBHead(APEX_CPU *cpu);
 int isROBFull(APEX_CPU *cpu);
 int isROBEmpty(APEX_CPU *cpu);
 int isROBEntryReady(ROB_Entry *entry);
-ROB_Entry* getROBEntry(APEX_CPU *cpu);
 void updateROBEntry(APEX_CPU *cpu, int src_tag, int src_value);
 
 //BTB
