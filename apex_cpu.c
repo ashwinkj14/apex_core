@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+// #include "file_parser.c"
 #include "apex_cpu.h"
 #include "apex_macros.h"
 
@@ -481,7 +482,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = cpu->DR1.pd;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -492,7 +493,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = cpu->DR1.pd;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -503,7 +504,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            dest = cpu->DR1.rd;
+            dest = cpu->DR2.rd;
             break;
         }
 
@@ -516,7 +517,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = cpu->DR1.pd;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -1867,12 +1868,15 @@ void APEX_cpu_run(APEX_CPU *cpu)
         APEX_fetch(cpu);
 
         print_reg_file(cpu);
+        
+        cpu->fBus[0].busy = 0;
+        cpu->fBus[1].busy = 0;
 
         if (cpu->single_step)
         {
             user_prompt_val = 'r';
             printf("Press any key to advance CPU Clock or <q> to quit:\n");
-            scanf("%c", &user_prompt_val);
+            //scanf("%c", &user_prompt_val);
 
             if ((user_prompt_val == 'Q') || (user_prompt_val == 'q'))
             {
