@@ -130,7 +130,6 @@ print_instruction(const CPU_Stage *stage)
         break;
     }
     }
-   
 }
 
 static void print_instruction_PR(const CPU_Stage *stage)
@@ -145,36 +144,35 @@ static void print_instruction_PR(const CPU_Stage *stage)
     case OPCODE_OR:
     case OPCODE_XOR:
     {
-          
+
         printf("P%d,P%d,P%d ", stage->pd, stage->ps1, stage->ps2);
         break;
     }
 
     case OPCODE_MOVC:
     {
-       
+
         printf("P%d", stage->pd);
         break;
     }
 
     case OPCODE_LOAD:
     {
-           
+
         printf("P%d,P%d ", stage->pd, stage->ps1);
         break;
     }
 
     case OPCODE_STORE:
     {
-           
-        printf("P%d,P%d ", stage->ps1, stage->ps2);  
+
+        printf("P%d,P%d ", stage->ps1, stage->ps2);
         break;
     }
 
     case OPCODE_BZ:
     case OPCODE_BNZ:
     {
-           
         printf("P%d,P%d ", stage->pd, stage->imm);
         break;
     }
@@ -193,12 +191,12 @@ static void print_instruction_PR(const CPU_Stage *stage)
 static void
 print_stage_content(const char *name, const CPU_Stage *stage)
 {
-    
+
     printf("%-15s: pc(%d) ", name, stage->pc);
     print_instruction(stage);
     printf("\n");
-    
-    if(strcmp(name,"Fetch"))
+
+    if (strcmp(name, "Fetch"))
     {
         printf("%-15s: pc(%d) ", name, stage->pc);
         print_instruction_PR(stage);
@@ -322,6 +320,22 @@ APEX_DR1(APEX_CPU *cpu)
                 cpu->DR1.stall = 1;
                 // stall nd break;
             }
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
             break;
             /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed
             Also update the clock cycle of the dispatched instruction in IQ*/
@@ -336,6 +350,7 @@ APEX_DR1(APEX_CPU *cpu)
             if (free != -1)
             {
                 cpu->rt.reg[cpu->DR1.rd] = free;
+                cpu->DR1.dest_arch_reg = cpu->DR1.rd;
                 cpu->DR1.pd = free;
                 cpu->DR1.stall = 0;
             }
@@ -343,6 +358,14 @@ APEX_DR1(APEX_CPU *cpu)
             {
                 cpu->DR1.stall = 1;
                 // stall nd break;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
             }
 
             cpu->DR1.imm = cpu->DR1.imm;
@@ -355,6 +378,7 @@ APEX_DR1(APEX_CPU *cpu)
             if (free != -1)
             {
                 cpu->rt.reg[cpu->DR1.rd] = free;
+                cpu->DR1.dest_arch_reg = cpu->DR1.rd;
                 cpu->DR1.pd = free;
                 cpu->DR1.stall = 0;
             }
@@ -423,12 +447,12 @@ APEX_DR1(APEX_CPU *cpu)
     }
 }
 
-static void 
+static void
 APEX_DR2(APEX_CPU *cpu)
 {
     if (cpu->DR2.has_insn)
     {
-        print_stage_content("DR2", &cpu->DR2);
+
         if (isIQFull(cpu) || isLSQFull(cpu) || isROBFull(cpu))
         {
             return;
@@ -440,11 +464,11 @@ APEX_DR2(APEX_CPU *cpu)
         int src2_value = 0;
         int dest = 0;
 
-        int rob_index = (cpu->rob->tail+1)%ROB_SIZE;
-        int lsq_index = (cpu->lsq->tail+1)%LSQ_SIZE;
+        int rob_index = (cpu->rob.tail + 1) % ROB_SIZE;
+        int lsq_index = (cpu->lsq.tail + 1) % LSQ_SIZE;
 
         int instruction_type = R2R;
-        
+
         switch (cpu->DR2.opcode)
         {
         case OPCODE_ADD:
@@ -470,7 +494,6 @@ APEX_DR2(APEX_CPU *cpu)
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
             dest = cpu->DR1.pd;
             break;
-
         }
 
         case OPCODE_ADDL:
@@ -506,13 +529,21 @@ APEX_DR2(APEX_CPU *cpu)
             break;
         }
 
-        case OPCODE_NOP:
         case OPCODE_HALT:
         {
             fu_type = 1;
             src1_valid = 1;
             src2_valid = 1;
-            instruction_type = NOP;
+            instruction_type = HALT;
+            break;
+        }
+
+        case OPCODE_NOP:
+        {
+            fu_type = 1;
+            src1_valid = 1;
+            src2_valid = 1;
+            instruction_type = SKIP;
             break;
         }
 
@@ -523,10 +554,10 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = (lsq_index+1)*-1;
+            dest = (lsq_index + 1) * -1;
             instruction_type = LOAD;
 
-            addLSQEntry(1,1,0,0,cpu->DR2.pd,1,0,0,rob_index,cpu);
+            addLSQEntry(1, 1, 0, 0, cpu->DR2.pd, 1, 0, 0, rob_index, cpu);
             break;
         }
 
@@ -536,10 +567,10 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            dest = (lsq_index+1)*-1;
+            dest = (lsq_index + 1) * -1;
             instruction_type = LOAD;
 
-            addLSQEntry(1,1,0,0,cpu->DR2.pd,1,0,0,rob_index,cpu);
+            addLSQEntry(1, 1, 0, 0, cpu->DR2.pd, 1, 0, 0, rob_index, cpu);
             break;
         }
 
@@ -550,10 +581,10 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = (lsq_index+1)*-1;
+            dest = (lsq_index + 1) * -1;
             instruction_type = STORE;
 
-            addLSQEntry(1,0,0,0,dest,src1_valid,cpu->DR2.ps1,src1_value,rob_index,cpu);
+            addLSQEntry(1, 0, 0, 0, dest, src1_valid, cpu->DR2.ps1, src1_value, rob_index, cpu);
             return;
         }
 
@@ -566,10 +597,10 @@ APEX_DR2(APEX_CPU *cpu)
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
             int src3_valid = !cpu->pr.PR_File[cpu->DR2.ps3].reg_invalid;
             int src3_value = cpu->pr.PR_File[cpu->DR2.ps3].phy_Reg;
-            dest = (lsq_index+1)*-1;
+            dest = (lsq_index + 1) * -1;
             instruction_type = STORE;
 
-            addLSQEntry(1,0,0,0,dest,src1_valid,cpu->DR2.ps1,src1_value,rob_index,cpu);
+            addLSQEntry(1, 0, 0, 0, dest, src1_valid, cpu->DR2.ps1, src1_value, rob_index, cpu);
             break;
         }
 
@@ -579,7 +610,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            instruction_type = NOP;
+            instruction_type = SKIP;
             break;
         }
 
@@ -589,7 +620,7 @@ APEX_DR2(APEX_CPU *cpu)
             fu_type = 1;
             src1_valid = 1;
             src2_valid = 1;
-            instruction_type = NOP;
+            instruction_type = SKIP;
             break;
         }
 
@@ -597,84 +628,96 @@ APEX_DR2(APEX_CPU *cpu)
         {
             break;
         }
-        
         }
-        addROBEntry(1,instruction_type,cpu->DR2.pc,cpu->DR2.pd,cpu->DR2.prev_phy_reg,cpu->DR2.dest_arch_reg,lsq_index,0,cpu);
-        addIQEntry(1,fu_type,cpu->DR2.imm,src1_valid,cpu->DR2.ps1,src1_value,src2_valid,cpu->DR2.rs2,src2_value,dest,cpu);
+        addROBEntry(1, instruction_type, cpu->DR2.pc, cpu->DR2.pd, cpu->DR2.prev_phy_reg, cpu->DR2.dest_arch_reg, lsq_index, 0, cpu);
+        addIQEntry(1, fu_type, cpu->DR2.imm, src1_valid, cpu->DR2.ps1, src1_value, src2_valid, cpu->DR2.rs2, src2_value, dest, cpu);
+        print_stage_content("DR2", &cpu->DR2);
+        cpu->I_Queue = cpu->DR2;
+        cpu->DR2.has_insn = FALSE;
     }
-    cpu->I_Queue = cpu->DR2;
-    cpu->DR2.has_insn = FALSE;
     APEX_IQ(cpu);
 }
 
-
 static void APEX_IQ(APEX_CPU *cpu)
 {
+    if (!cpu->fBus[0].busy)
+    {
+        updateIQEntry(cpu, cpu->fBus[0].tag, cpu->fBus[0].isDataFwd, cpu->fBus[0].data);
+    }
+    if (!cpu->fBus[1].busy)
+    {
+        updateIQEntry(cpu, cpu->fBus[1].tag, cpu->fBus[1].isDataFwd, cpu->fBus[1].data);
+    }
     int index = 0;
     int loop = 1;
-    while(loop){
+    while (loop)
+    {
         index = getIQEntry_Index(cpu, index);
-        if(index==-1){
+        if (index == -1)
+        {
             return;
         }
-        IQ_Entry *entry = cpu->iq->entry[index];
-        int fu_type = entry->fu_type;
-        switch(fu_type)
+
+        int fu_type = cpu->iq.entry[index]->fu_type;
+        switch (fu_type)
         {
-            case 1:
+        case 1:
+        {
+            if (cpu->INT_FU.has_insn)
             {
-                if(cpu->INT_FU.has_insn){
-                    index++;
-                    continue;
-                }
-                cpu->I_Queue.rs1_value = entry->src1_value;
-                cpu->I_Queue.rs2_value = entry->src2_value;
-                cpu->I_Queue.imm = entry->literal;
-                cpu->I_Queue.has_insn = TRUE;
-                cpu->I_Queue.pd = entry->dest;
-                cpu->INT_FU = cpu->I_Queue;
-                break;
+                index++;
+                continue;
             }
-
-            case 2:
-            {
-                if(cpu->LOP_FU.has_insn){
-                    index++;
-                    continue;
-                }
-                cpu->I_Queue.rs1_value = entry->src1_value;
-                cpu->I_Queue.rs2_value = entry->src2_value;
-                cpu->I_Queue.imm = entry->literal;
-                cpu->I_Queue.has_insn = TRUE;
-                cpu->I_Queue.pd = entry->dest;
-                cpu->LOP_FU = cpu->I_Queue;
-                break;
-            }
-            
-            case 3:
-            {
-                if(cpu->MUL1_FU.has_insn){
-                    index++;
-                    continue;
-                }
-                cpu->I_Queue.rs1_value = entry->src1_value;
-                cpu->I_Queue.rs2_value = entry->src2_value;
-                cpu->I_Queue.imm = entry->literal;
-                cpu->I_Queue.has_insn = TRUE;
-                cpu->I_Queue.pd = entry->dest;
-                cpu->MUL1_FU = cpu->I_Queue;
-                break;
-            }
-
-            default:
-            {
-                break;
-            }
+            cpu->I_Queue.rs1_value = cpu->iq.entry[index]->src1_value;
+            cpu->I_Queue.rs2_value = cpu->iq.entry[index]->src2_value;
+            cpu->I_Queue.imm = cpu->iq.entry[index]->literal;
+            cpu->I_Queue.has_insn = TRUE;
+            cpu->I_Queue.pd = cpu->iq.entry[index]->dest;
+            cpu->INT_FU = cpu->I_Queue;
+            break;
         }
+
+        case 2:
+        {
+            if (cpu->LOP_FU.has_insn)
+            {
+                index++;
+                continue;
+            }
+            cpu->I_Queue.rs1_value = cpu->iq.entry[index]->src1_value;
+            cpu->I_Queue.rs2_value = cpu->iq.entry[index]->src2_value;
+            cpu->I_Queue.imm = cpu->iq.entry[index]->literal;
+            cpu->I_Queue.has_insn = TRUE;
+            cpu->I_Queue.pd = cpu->iq.entry[index]->dest;
+            cpu->LOP_FU = cpu->I_Queue;
+            break;
+        }
+
+        case 3:
+        {
+            if (cpu->MUL1_FU.has_insn)
+            {
+                index++;
+                continue;
+            }
+            cpu->I_Queue.rs1_value = cpu->iq.entry[index]->src1_value;
+            cpu->I_Queue.rs2_value = cpu->iq.entry[index]->src2_value;
+            cpu->I_Queue.imm = cpu->iq.entry[index]->literal;
+            cpu->I_Queue.has_insn = TRUE;
+            cpu->I_Queue.pd = cpu->iq.entry[index]->dest;
+            cpu->MUL1_FU = cpu->I_Queue;
+            break;
+        }
+
+        default:
+        {
+            break;
+        }
+        }
+        break;
     }
     shiftIQElements(cpu, index);
 }
-
 
 static void
 APEX_INT_FU(APEX_CPU *cpu)
@@ -682,7 +725,8 @@ APEX_INT_FU(APEX_CPU *cpu)
     if (cpu->INT_FU.has_insn)
     {
         print_stage_content("INT_FU", &cpu->INT_FU);
-        if(cpu->fBus[0].busy && cpu->fBus[1].busy){
+        if (cpu->fBus[0].busy && cpu->fBus[1].busy)
+        {
             return;
         }
         switch (cpu->INT_FU.opcode)
@@ -714,8 +758,8 @@ APEX_INT_FU(APEX_CPU *cpu)
                 cpu->fBus[1].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
-
             }
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
             break;
         }
         case OPCODE_DIV:
@@ -746,7 +790,7 @@ APEX_INT_FU(APEX_CPU *cpu)
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
-
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
             break;
         }
         case OPCODE_SUB:
@@ -777,7 +821,7 @@ APEX_INT_FU(APEX_CPU *cpu)
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
-
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
             break;
         }
         case OPCODE_SUBL:
@@ -808,7 +852,7 @@ APEX_INT_FU(APEX_CPU *cpu)
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
-
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
             break;
         }
         case OPCODE_ADDL:
@@ -839,6 +883,7 @@ APEX_INT_FU(APEX_CPU *cpu)
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
 
             break;
         }
@@ -904,6 +949,26 @@ APEX_INT_FU(APEX_CPU *cpu)
             }
             break;
         }
+        case OPCODE_MOVC:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.imm;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+            cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
+            break;
+        }
+
         case OPCODE_STORE:
         {
             cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.imm;
@@ -944,6 +1009,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             break;
         }
         }
+        cpu->INT_FU.has_insn = FALSE;
     }
 }
 
@@ -953,7 +1019,8 @@ APEX_LOP_FU(APEX_CPU *cpu)
     if (cpu->LOP_FU.has_insn)
     {
         print_stage_content("LOP_FU", &cpu->LOP_FU);
-        if(cpu->fBus[0].busy && cpu->fBus[1].busy){
+        if (cpu->fBus[0].busy && cpu->fBus[1].busy)
+        {
             return;
         }
         switch (cpu->LOP_FU.opcode)
@@ -1029,9 +1096,9 @@ APEX_MUL1_FU(APEX_CPU *cpu)
         {
             cpu->MUL1_FU.result_buffer = cpu->MUL1_FU.rs1_value * cpu->MUL1_FU.rs2_value;
         }
+        cpu->MUL2_FU = cpu->MUL1_FU;
+        cpu->MUL1_FU.has_insn = FALSE;
     }
-    cpu->MUL2_FU = cpu->MUL1_FU;
-    cpu->MUL1_FU.has_insn = FALSE;
 }
 
 static void
@@ -1044,9 +1111,9 @@ APEX_MUL2_FU(APEX_CPU *cpu)
         {
             cpu->MUL2_FU.result_buffer = cpu->MUL2_FU.rs1_value * cpu->MUL2_FU.rs2_value;
         }
+        cpu->MUL3_FU = cpu->MUL2_FU;
+        cpu->MUL2_FU.has_insn = FALSE;
     }
-    cpu->MUL3_FU = cpu->MUL2_FU;
-    cpu->MUL2_FU.has_insn = FALSE;
 }
 
 static void
@@ -1055,7 +1122,8 @@ APEX_MUL3_FU(APEX_CPU *cpu)
     if (cpu->MUL3_FU.has_insn)
     {
         print_stage_content("MUL3_FU", &cpu->MUL3_FU);
-        if(cpu->fBus[0].busy && cpu->fBus[1].busy){
+        if (cpu->fBus[0].busy && cpu->fBus[1].busy)
+        {
             return;
         }
         if (cpu->MUL3_FU.opcode == OPCODE_MUL)
@@ -1085,7 +1153,8 @@ APEX_MUL4_FU(APEX_CPU *cpu)
     if (cpu->MUL4_FU.has_insn)
     {
         print_stage_content("MUL4_FU", &cpu->MUL4_FU);
-        if(cpu->fBus[0].busy && cpu->fBus[1].busy){
+        if (cpu->fBus[0].busy && cpu->fBus[1].busy)
+        {
             return;
         }
         if (cpu->MUL4_FU.opcode == OPCODE_MUL)
@@ -1114,48 +1183,92 @@ APEX_MUL4_FU(APEX_CPU *cpu)
             cpu->fBus[1].tag = cpu->MUL3_FU.pd;
             cpu->fBus[1].busy = 1;
         }
+        cpu->pr.PR_File[cpu->MUL4_FU.pd].reg_invalid = 0;
         cpu->MUL4_FU.has_insn = FALSE;
     }
-    cpu->pr.PR_File[cpu->MUL4_FU.pd].reg_invalid = 0;
-    // pass it writeback or to the commit stage
 }
 
-static void do_commit(APEX_CPU *cpu)
+int do_commit(APEX_CPU *cpu)
 {
     ROB_Entry *entry = getROBHead(cpu);
-    if(entry == NULL)
+    if (entry == NULL)
     {
-        return;
+        return 0;
     }
     switch (entry->instruction_type)
     {
-        case R2R:
+    case R2R:
+    {
+        int isInvalid = cpu->pr.PR_File[entry->dest_phy_reg].reg_invalid;
+        if (isInvalid)
         {
-            int isInvalid = cpu->pr.PR_File[entry->dest_phy_reg].reg_invalid;
-            if(isInvalid){
-                return;
-            }
-            cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
-            removeROBHead(cpu);
-            enqueueFreeList(entry->prev_phy_reg, cpu);
-            break;
+            return 0;
         }
-
-        case LOAD:
-        {
-            break;
-        }
-
-        case STORE:
-        {
-            break;
-        }
-        
-        case NOP:
-        {
-            break;
-        }
+        cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
+        enqueueFreeList(entry->prev_phy_reg, cpu);
+        break;
     }
+
+    case LOAD:
+    {
+        if (entry->lsq_index == cpu->lsq.head)
+        {
+            APEX_D_cache(cpu);
+            if (entry->lsq_index == cpu->lsq.head)
+            {
+                return 0;
+            }
+            enqueueFreeList(entry->prev_phy_reg, cpu);
+        }
+        break;
+    }
+
+    case STORE:
+    {
+        if (entry->lsq_index == cpu->lsq.head)
+        {
+            APEX_D_cache(cpu);
+            if (entry->lsq_index == cpu->lsq.head)
+            {
+                return 0;
+            }
+        }
+        break;
+    }
+
+    case SKIP:
+    case HALT:
+    {
+        break;
+    }
+    }
+    removeROBHead(cpu);
+    if (entry->instruction_type == HALT)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+void APEX_D_cache(APEX_CPU *cpu)
+{
+    int head = cpu->lsq.head;
+    LSQ_Entry *entry = cpu->lsq.entry[head];
+    if (!entry->mem_valid_bit)
+    {
+        return;
+    }
+    int lost = entry->lost;
+    if (lost)
+    {
+        int pr = entry->dest_reg_address;
+        cpu->pr.PR_File[pr].phy_Reg = cpu->data_memory[entry->mem_address];
+    }
+    else
+    {
+        cpu->data_memory[entry->mem_address] = entry->src_value;
+    }
+    cpu->lsq.head = (head + 1) % LSQ_SIZE;
 }
 
 /*
@@ -1254,16 +1367,14 @@ intialize_PR_RT(APEX_CPU *cpu)
     {
         cpu->rt.reg[cpu->pr.head] = cpu->pr.head;
         cpu->pr.PR_File[cpu->pr.head].cc_flag = -1;
-        printf("P%d",cpu->rt.reg[cpu->pr.head]);
         cpu->pr.head++;
     }
     int head = cpu->pr.head;
-    while(head <15)
+    while (head < 15)
     {
         cpu->pr.PR_File[head].free = head;
         head++;
     }
-
 }
 
 static void initialize_bus(APEX_CPU *cpu)
@@ -1308,19 +1419,15 @@ APEX_cpu_init(const char *filename)
     initialize_bus(cpu);
     intialize_PR_RT(cpu);
 
-    cpu->iq = calloc(1, sizeof(IQ));
-    cpu->iq->tail = -1;
+    cpu->iq.tail = -1;
 
-    cpu->lsq = calloc(1, sizeof(LSQ));
-    cpu->lsq->head = -1;
-    cpu->lsq->tail = -1;
+    cpu->lsq.head = -1;
+    cpu->lsq.tail = -1;
 
-    cpu->rob = calloc(1, sizeof(ROB));
-    cpu->rob->head = -1;
-    cpu->rob->tail = -1;
+    cpu->rob.head = -1;
+    cpu->rob.tail = -1;
 
-    cpu->btb = calloc(1, sizeof(BTB));
-    cpu->btb->tail = -1;
+    cpu->btb.tail = -1;
 
     /* Parse input file and create code memory */
     cpu->code_memory = create_code_memory(filename, &cpu->code_memory_size);
@@ -1373,28 +1480,25 @@ void addIQEntry(
     {
         return;
     }
-    else
-    {
-        IQ_Entry *entry = malloc(sizeof(IQ_Entry));
-        entry->allocated_bit = allocated_bit;
-        entry->fu_type = fu_type;
-        entry->literal = literal;
-        entry->src1_valid_bit = src1_valid_bit;
-        entry->src1_tag = src1_tag;
-        entry->src1_value = src1_value;
-        entry->src2_valid_bit = src2_valid_bit;
-        entry->src2_tag = src2_tag;
-        entry->src2_value = src2_value;
-        entry->dest = dest;
+    IQ_Entry *entry = malloc(sizeof(IQ_Entry));
+    entry->allocated_bit = allocated_bit;
+    entry->fu_type = fu_type;
+    entry->literal = literal;
+    entry->src1_valid_bit = src1_valid_bit;
+    entry->src1_tag = src1_tag;
+    entry->src1_value = src1_value;
+    entry->src2_valid_bit = src2_valid_bit;
+    entry->src2_tag = src2_tag;
+    entry->src2_value = src2_value;
+    entry->dest = dest;
 
-        int tail = ++cpu->iq->tail;
-        cpu->iq->entry[tail] = entry;
-    }
+    int tail = ++cpu->iq.tail;
+    cpu->iq.entry[tail] = entry;
 }
 
 int isIQFull(APEX_CPU *cpu)
 {
-    int tail = cpu->iq->tail;
+    int tail = cpu->iq.tail;
     if (tail == IQ_SIZE - 1)
     {
         return 1;
@@ -1404,7 +1508,7 @@ int isIQFull(APEX_CPU *cpu)
 
 int isIQEmpty(APEX_CPU *cpu)
 {
-    int tail = cpu->iq->tail;
+    int tail = cpu->iq.tail;
     if (tail == -1)
     {
         return 1;
@@ -1418,21 +1522,18 @@ int getIQEntry_Index(APEX_CPU *cpu, int index)
     {
         return -1;
     }
-    else
+    int tail = cpu->iq.tail;
+    int i = index;
+    while (i <= tail)
     {
-        int tail = cpu->iq->tail;
-        int i = index;
-        while (i <= tail)
+
+        if (isIQEntryReady(cpu->iq.entry[i]))
         {
-            IQ_Entry *entry = cpu->iq->entry[i];
-            if (isIQEntryReady(entry))
-            {
-                return i;
-            }
-            i++;
+            return i;
         }
-        return -1;
+        i++;
     }
+    return -1;
 }
 
 IQ_Entry *getIQEntry(APEX_CPU *cpu)
@@ -1441,22 +1542,19 @@ IQ_Entry *getIQEntry(APEX_CPU *cpu)
     {
         return NULL;
     }
-    else
+    int tail = cpu->iq.tail;
+    int i = 0;
+    while (i <= tail)
     {
-        int tail = cpu->iq->tail;
-        int i = 0;
-        while (i <= tail)
+        IQ_Entry *entry = cpu->iq.entry[i];
+        if (isIQEntryReady(entry))
         {
-            IQ_Entry *entry = cpu->iq->entry[i];
-            if (isIQEntryReady(entry))
-            {
-                shiftIQElements(cpu, i);
-                return entry;
-            }
-            i++;
+            shiftIQElements(cpu, i);
+            return entry;
         }
-        return NULL;
+        i++;
     }
+    return NULL;
 }
 
 int isIQEntryReady(IQ_Entry *entry)
@@ -1466,31 +1564,36 @@ int isIQEntryReady(IQ_Entry *entry)
 
 void shiftIQElements(APEX_CPU *cpu, int pos)
 {
-    int tail = cpu->iq->tail;
+    int tail = cpu->iq.tail;
     while (pos < tail)
     {
-        cpu->iq->entry[pos] = cpu->iq->entry[pos + 1];
+        cpu->iq.entry[pos] = cpu->iq.entry[pos + 1];
         pos++;
     }
-    cpu->iq->tail--;
+    cpu->iq.tail--;
 }
 
-void updateIQEntry(APEX_CPU *cpu, int src_tag, int src_value)
+void updateIQEntry(APEX_CPU *cpu, int src_tag, int isDataAvailable, int src_value)
 {
-    int tail = cpu->iq->tail;
+    int tail = cpu->iq.tail;
     int i = 0;
     while (i <= tail)
     {
-        IQ_Entry *entry = cpu->iq->entry[i];
-        if (entry->src1_tag == src_tag)
+        if (cpu->iq.entry[i]->src1_tag == src_tag)
         {
-            entry->src1_valid_bit = 1;
-            cpu->iq->entry[i] = entry;
+            cpu->iq.entry[i]->src1_valid_bit = 1;
+            if (isDataAvailable)
+            {
+                cpu->iq.entry[i]->src1_value = src_value;
+            }
         }
-        if (entry->src2_tag == src_tag)
+        if (cpu->iq.entry[i]->src2_tag == src_tag)
         {
-            entry->src2_valid_bit = 1;
-            cpu->iq->entry[i] = entry;
+            cpu->iq.entry[i]->src2_valid_bit = 1;
+            if (isDataAvailable)
+            {
+                cpu->iq.entry[i]->src2_value = src_value;
+            }
         }
         i++;
     }
@@ -1527,36 +1630,36 @@ void addLSQEntry(
     entry->src_value = src_value;
     entry->rob_index = rob_index;
 
-    int tail = cpu->lsq->tail;
+    int tail = cpu->lsq.tail;
     tail = (tail + 1) % LSQ_SIZE;
-    cpu->lsq->entry[tail] = entry;
-    cpu->lsq->tail = tail;
+    cpu->lsq.entry[tail] = entry;
+    cpu->lsq.tail = tail;
 }
 
-LSQ_Entry *getLSQEntry(APEX_CPU *cpu)
+int getLSQEntry(APEX_CPU *cpu)
 {
     if (isLSQEmpty(cpu))
     {
-        return NULL;
+        return -2;
     }
-    int head = cpu->lsq->head;
-    int tail = cpu->lsq->tail;
-    LSQ_Entry *entry = cpu->lsq->entry[head];
+    int head = cpu->lsq.head;
+    int tail = cpu->lsq.tail;
+
     if (head == tail)
     {
-        cpu->lsq->head = -1;
-        cpu->lsq->tail = -1;
-        return entry;
+        cpu->lsq.head = -1;
+        cpu->lsq.tail = -1;
+        return -1;
     }
     head = (head + 1) % LSQ_SIZE;
-    cpu->lsq->head = head;
-    return entry;
+    cpu->lsq.head = head;
+    return head;
 }
 
 int isLSQFull(APEX_CPU *cpu)
 {
-    int head = cpu->lsq->head;
-    int tail = cpu->lsq->tail;
+    int head = cpu->lsq.head;
+    int tail = cpu->lsq.tail;
     if ((head == tail + 1) || (head == 0 && tail == LSQ_SIZE - 1))
     {
         return 1;
@@ -1566,8 +1669,8 @@ int isLSQFull(APEX_CPU *cpu)
 
 int isLSQEmpty(APEX_CPU *cpu)
 {
-    int head = cpu->lsq->head;
-    int tail = cpu->lsq->tail;
+    int head = cpu->lsq.head;
+    int tail = cpu->lsq.tail;
     if (head == -1 && tail == -1)
     {
         return 1;
@@ -1577,17 +1680,16 @@ int isLSQEmpty(APEX_CPU *cpu)
 
 void updateLSQEntry(APEX_CPU *cpu, int src_tag, int src_value)
 {
-    int tail = cpu->lsq->tail;
+    int tail = cpu->lsq.tail;
     int i = 0;
     while (i <= tail)
     {
-        LSQ_Entry *entry = cpu->lsq->entry[i];
-        if (entry->lost == 0)
+
+        if (cpu->lsq.entry[i]->lost == 0)
         {
-            if (entry->src_tag == src_tag)
+            if (cpu->lsq.entry[i]->src_tag == src_tag)
             {
-                entry->src_valid_bit = 1;
-                cpu->lsq->entry[i] = entry;
+                cpu->lsq.entry[i]->src_valid_bit = 1;
             }
         }
         i++;
@@ -1610,6 +1712,7 @@ void addROBEntry(
 {
     if (isROBFull(cpu))
     {
+        printf("ROB full");
         return;
     }
     ROB_Entry *entry = malloc(sizeof(ROB_Entry));
@@ -1622,10 +1725,10 @@ void addROBEntry(
     entry->lsq_index = lsq_index;
     entry->mem_error_code = mem_error_code;
 
-    int tail = cpu->rob->tail;
+    int tail = cpu->rob.tail;
     tail = (tail + 1) % ROB_SIZE;
-    cpu->rob->entry[tail] = entry;
-    cpu->rob->tail = tail;
+    cpu->rob.entry[tail] = entry;
+    cpu->rob.tail = tail;
 }
 
 ROB_Entry *getROBHead(APEX_CPU *cpu)
@@ -1634,7 +1737,8 @@ ROB_Entry *getROBHead(APEX_CPU *cpu)
     {
         return NULL;
     }
-    return cpu->rob->entry[cpu->rob->head];
+
+    return cpu->rob.entry[cpu->rob.head];
 }
 
 void removeROBHead(APEX_CPU *cpu)
@@ -1643,23 +1747,25 @@ void removeROBHead(APEX_CPU *cpu)
     {
         return;
     }
-    int head = cpu->rob->head;
-    int tail = cpu->rob->tail;
-    if (head == tail)
+
+    int head = cpu->rob.head;
+    int tail = cpu->rob.tail;
+
+    if (head == tail && head != -1)
     {
-        cpu->rob->head = -1;
-        cpu->rob->tail = -1;
+        cpu->rob.head = -1;
+        cpu->rob.tail = -1;
         return;
     }
     head = (head + 1) % ROB_SIZE;
-    cpu->rob->head = head;
+    cpu->rob.head = head;
     return;
 }
 
 int isROBFull(APEX_CPU *cpu)
 {
-    int head = cpu->rob->head;
-    int tail = cpu->rob->tail;
+    int head = cpu->rob.head;
+    int tail = cpu->rob.tail;
     if ((head == tail + 1) || (head == 0 && tail == ROB_SIZE - 1))
     {
         return 1;
@@ -1669,20 +1775,24 @@ int isROBFull(APEX_CPU *cpu)
 
 int isROBEmpty(APEX_CPU *cpu)
 {
-    int head = cpu->rob->head;
-    int tail = cpu->rob->tail;
+    int head = cpu->rob.head;
+    int tail = cpu->rob.tail;
     if (head == -1 && tail == -1)
     {
         return 1;
+    }
+    if (head == -1 && tail != -1)
+    {
+        cpu->rob.head = 0;
     }
     return 0;
 }
 
 void updateROBEntry(APEX_CPU *cpu, int rob_index, int mem_error_code)
 {
-    if (rob_index >= cpu->rob->head && rob_index <= cpu->rob->tail)
+    if (rob_index >= cpu->rob.head && rob_index <= cpu->rob.tail)
     {
-        cpu->rob->entry[rob_index]->mem_error_code = mem_error_code;
+        cpu->rob.entry[rob_index]->mem_error_code = mem_error_code;
     }
 }
 
@@ -1696,10 +1806,10 @@ void addBTBEntry(int pc_value, int target_address, APEX_CPU *cpu)
     entry->pc_value = pc_value;
     entry->target_address = target_address;
 
-    int tail = cpu->btb->tail;
+    int tail = cpu->btb.tail;
     tail = (tail + 1) % BTB_SIZE;
-    cpu->btb->entry[tail] = entry;
-    cpu->btb->tail = tail;
+    cpu->btb.entry[tail] = entry;
+    cpu->btb.tail = tail;
 }
 
 BTB_Entry *getBTBEntry(int pc_value, APEX_CPU *cpu)
@@ -1707,7 +1817,7 @@ BTB_Entry *getBTBEntry(int pc_value, APEX_CPU *cpu)
     int i = 0;
     while (i < BTB_SIZE)
     {
-        BTB_Entry *entry = cpu->btb->entry[i];
+        BTB_Entry *entry = cpu->btb.entry[i];
         if (entry->pc_value == pc_value)
         {
             return entry;
@@ -1735,23 +1845,25 @@ void APEX_cpu_run(APEX_CPU *cpu)
             printf("Clock Cycle #: %d\n", cpu->clock);
             printf("--------------------------------------------\n");
         }
-        if (APEX_writeback(cpu))
+        if (do_commit(cpu))
         {
             /* Halt in writeback stage */
             printf("APEX_CPU: Simulation Complete, cycles = %d instructions = %d\n", cpu->clock, cpu->insn_completed);
             break;
         }
 
-        // APEX_memory(cpu);
         APEX_MUL4_FU(cpu);
         APEX_MUL3_FU(cpu);
         APEX_MUL2_FU(cpu);
         APEX_MUL1_FU(cpu);
+
         APEX_LOP_FU(cpu);
+
         APEX_INT_FU(cpu);
-        // APEX_decode(cpu);
+
         APEX_DR2(cpu);
         APEX_DR1(cpu);
+
         APEX_fetch(cpu);
 
         print_reg_file(cpu);

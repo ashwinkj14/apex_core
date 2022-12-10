@@ -24,6 +24,7 @@ main(int argc, char const *argv[])
     }
 
     cpu = APEX_cpu_init(argv[1]);
+    // cpu = APEX_cpu_init("/Users/ash/Downloads/binghamton/CAO/finalProject/apex_core/input.asm");
     if (!cpu)
     {
         fprintf(stderr, "APEX_Error: Unable to initialize CPU\n");

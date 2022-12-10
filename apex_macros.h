@@ -26,7 +26,8 @@
 #define R2R 1
 #define LOAD 2
 #define STORE 3
-#define NOP 4
+#define HALT 4
+#define SKIP 5
 
 /* Numeric OPCODE identifiers for instructions */
 #define OPCODE_ADD 0x0

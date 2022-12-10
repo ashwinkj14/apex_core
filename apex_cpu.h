@@ -23,10 +23,11 @@ typedef struct APEX_Instruction
     int imm;
 } APEX_Instruction;
 
-typedef struct  Forwarding_Bus
+typedef struct Forwarding_Bus
 {
     int tag;
     int busy;
+    int isDataFwd;
     int data;
     int cc;
 }FB;
@@ -190,10 +191,10 @@ typedef struct APEX_CPU
     PR pr;
     FB fBus[2];
 
-    IQ *iq;
-    LSQ *lsq;
-    ROB *rob;
-    BTB *btb;
+    IQ iq;
+    LSQ lsq;
+    ROB rob;
+    BTB btb;
 } APEX_CPU;
 
 //IQ
@@ -211,13 +212,13 @@ void addIQEntry(
     APEX_CPU *cpu
     );
 
-IQ_Entry* getIQEntry(APEX_CPU *cpu);
+IQ_Entry *getIQEntry(APEX_CPU *cpu);
 int getIQEntry_Index(APEX_CPU *cpu, int index);
 int isIQFull(APEX_CPU *cpu);
 int isIQEmpty(APEX_CPU *cpu);
 int isIQEntryReady(IQ_Entry *entry);
 void shiftIQElements(APEX_CPU *cpu, int pos);
-void updateIQEntry(APEX_CPU *cpu, int src_tag, int src_value);
+void updateIQEntry(APEX_CPU *cpu, int src_tag, int isDataAvailable, int src_value);
 static void APEX_IQ(APEX_CPU *cpu);
 
 //LSQ
@@ -233,11 +234,11 @@ void addLSQEntry(
     int rob_index,
     APEX_CPU *cpu
 );
-LSQ_Entry* getLSQEntry(APEX_CPU *cpu);
+
 int isLSQFull(APEX_CPU *cpu);
 int isLSQEmpty(APEX_CPU *cpu);
 int isLSQEntryReady(LSQ_Entry *entry);
-LSQ_Entry* getLSQEntry(APEX_CPU *cpu);
+int getLSQEntry(APEX_CPU *cpu);
 void updateLSQEntry(APEX_CPU *cpu, int src_tag, int src_value);
 
 
@@ -253,7 +254,7 @@ void addROBEntry(
     int mem_error_code,
     APEX_CPU *cpu
 );
-ROB_Entry *getROBHead(APEX_CPU *cpu);
+ROB_Entry* getROBHead(APEX_CPU *cpu);
 void removeROBHead(APEX_CPU *cpu);
 int isROBFull(APEX_CPU *cpu);
 int isROBEmpty(APEX_CPU *cpu);
@@ -268,4 +269,6 @@ APEX_Instruction *create_code_memory(const char *filename, int *size);
 APEX_CPU *APEX_cpu_init(const char *filename);
 void APEX_cpu_run(APEX_CPU *cpu);
 void APEX_cpu_stop(APEX_CPU *cpu);
+int do_commit(APEX_CPU *cpu);
+void APEX_D_cache(APEX_CPU *cpu);
 #endif
