@@ -53,6 +53,16 @@ set_opcode_str(const char *opcode_str)
     {
         return OPCODE_SUB;
     }
+    if (strcmp(opcode_str, "ADDL") == 0)
+    {
+        return OPCODE_ADDL;
+    }
+
+    if (strcmp(opcode_str, "SUBL") == 0)
+    {
+        return OPCODE_SUBL;
+    }
+
 
     if (strcmp(opcode_str, "MUL") == 0)
     {
@@ -93,6 +103,15 @@ set_opcode_str(const char *opcode_str)
     {
         return OPCODE_STORE;
     }
+    if (strcmp(opcode_str, "LDR") == 0)
+    {
+        return OPCODE_LDR;
+    }
+
+    if (strcmp(opcode_str, "STR") == 0)
+    {
+        return OPCODE_STR;
+    }
 
     if (strcmp(opcode_str, "BZ") == 0)
     {
@@ -104,9 +123,18 @@ set_opcode_str(const char *opcode_str)
         return OPCODE_BNZ;
     }
 
+    if (strcmp(opcode_str, "JUMP") == 0)
+    {
+        return OPCODE_JUMP;
+    }
+
     if (strcmp(opcode_str, "HALT") == 0)
     {
         return OPCODE_HALT;
+    }
+    if (strcmp(opcode_str, "CMP") == 0)
+    {
+        return OPCODE_CMP;
     }
 
     assert(0 && "Invalid opcode");
@@ -168,6 +196,7 @@ create_APEX_instruction(APEX_Instruction *ins, char *buffer)
         case OPCODE_AND:
         case OPCODE_OR:
         case OPCODE_XOR:
+        case OPCODE_LDR:
         {
             ins->rd = get_num_from_string(tokens[0]);
             ins->rs1 = get_num_from_string(tokens[1]);
@@ -183,6 +212,8 @@ create_APEX_instruction(APEX_Instruction *ins, char *buffer)
         }
 
         case OPCODE_LOAD:
+        case OPCODE_ADDL:
+        case OPCODE_SUBL:
         {
             ins->rd = get_num_from_string(tokens[0]);
             ins->rs1 = get_num_from_string(tokens[1]);
@@ -197,13 +228,31 @@ create_APEX_instruction(APEX_Instruction *ins, char *buffer)
             ins->imm = get_num_from_string(tokens[2]);
             break;
         }
-
+        case OPCODE_STR:
+        {
+            ins->rs1 = get_num_from_string(tokens[0]);
+            ins->rs2 = get_num_from_string(tokens[1]);
+            ins->rs3 = get_num_from_string(tokens[2]);
+            break;
+        }
         case OPCODE_BZ:
         case OPCODE_BNZ:
         {
             ins->imm = get_num_from_string(tokens[0]);
             break;
         }
+        case OPCODE_JUMP:
+        {
+            ins->rs1 = get_num_from_string(tokens[0]);
+            ins->imm = get_num_from_string(tokens[1]);
+        }
+        case OPCODE_CMP:
+        {
+            ins->rs1 = get_num_from_string(tokens[0]);
+            ins->rs2 = get_num_from_string(tokens[1]);
+        }
+        
+        
     }
     /* Fill in rest of the instructions accordingly */
 }

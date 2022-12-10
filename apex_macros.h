@@ -23,6 +23,11 @@
 #define ROB_SIZE 12
 #define BTB_SIZE 4
 
+#define R2R 1
+#define LOAD 2
+#define STORE 3
+#define NOP 4
+
 /* Numeric OPCODE identifiers for instructions */
 #define OPCODE_ADD 0x0
 #define OPCODE_SUB 0x1
@@ -37,6 +42,13 @@
 #define OPCODE_BZ 0xa
 #define OPCODE_BNZ 0xb
 #define OPCODE_HALT 0xc
+#define OPCODE_LDR 0xd
+#define OPCODE_STR 0xe
+#define OPCODE_JUMP 0xf
+#define OPCODE_NOP 0x10
+#define OPCODE_ADDL 0x11
+#define OPCODE_SUBL 0x12
+#define OPCODE_CMP  0x13
 
 /* Set this flag to 1 to enable debug messages */
 #define ENABLE_DEBUG_MESSAGES 1

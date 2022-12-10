@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "apex_cpu.h"
 #include "apex_macros.h"
@@ -22,7 +23,62 @@ get_code_memory_index_from_pc(const int pc)
 {
     return (pc - 4000) / 4;
 }
+static void
+enqueueFreeList(int index, APEX_CPU *cpu)
+{
+    cpu->pr.tail = (++cpu->pr.tail) % 15;
+    cpu->pr.PR_File[cpu->pr.tail].free = index;
+}
 
+static int isPRF_empty(APEX_CPU *cpu)
+{
+    if (cpu->pr.tail == -1 && cpu->pr.head == -1)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+static int getFreeRegFromPR(APEX_CPU *cpu)
+{
+    if (isPRF_empty(cpu))
+    {
+        return -1;
+    }
+    int index = cpu->pr.head;
+    if (cpu->DR1.opcode == OPCODE_ADD || cpu->DR1.opcode == OPCODE_SUB || cpu->DR1.opcode == OPCODE_DIV || cpu->DR1.opcode == OPCODE_MUL || cpu->DR1.opcode == OPCODE_ADDL || cpu->DR1.opcode == OPCODE_SUBL || cpu->DR1.opcode == OPCODE_CMP)
+    {
+        cpu->prev_cc = cpu->pr.PR_File[index].free;
+    }
+
+    if (cpu->pr.tail == cpu->pr.head)
+    {
+        cpu->pr.tail = -1;
+        cpu->pr.head = -1;
+    }
+    else
+    {
+        cpu->pr.head = (++cpu->pr.head) % 15;
+    }
+    cpu->pr.PR_File[index].reg_invalid = 1;
+    return cpu->pr.PR_File[index].free;
+}
+
+static void setSrcRegWithPR(int r1, int r2, int r3, APEX_CPU *cpu)
+{
+    if (r1 != -1)
+    {
+        cpu->DR1.ps1 = cpu->rt.reg[cpu->DR1.rs1];
+    }
+    if (r2 != -1)
+    {
+        cpu->DR1.ps2 = cpu->rt.reg[cpu->DR1.rs2];
+        if (r3 != -1)
+        {
+            cpu->DR1.ps3 = cpu->rt.reg[cpu->DR1.rs3];
+        }
+    }
+}
 static void
 print_instruction(const CPU_Stage *stage)
 {
@@ -74,8 +130,62 @@ print_instruction(const CPU_Stage *stage)
         break;
     }
     }
+   
 }
 
+static void print_instruction_PR(const CPU_Stage *stage)
+{
+    switch (stage->opcode)
+    {
+    case OPCODE_ADD:
+    case OPCODE_SUB:
+    case OPCODE_MUL:
+    case OPCODE_DIV:
+    case OPCODE_AND:
+    case OPCODE_OR:
+    case OPCODE_XOR:
+    {
+          
+        printf("P%d,P%d,P%d ", stage->pd, stage->ps1, stage->ps2);
+        break;
+    }
+
+    case OPCODE_MOVC:
+    {
+       
+        printf("P%d", stage->pd);
+        break;
+    }
+
+    case OPCODE_LOAD:
+    {
+           
+        printf("P%d,P%d ", stage->pd, stage->ps1);
+        break;
+    }
+
+    case OPCODE_STORE:
+    {
+           
+        printf("P%d,P%d ", stage->ps1, stage->ps2);  
+        break;
+    }
+
+    case OPCODE_BZ:
+    case OPCODE_BNZ:
+    {
+           
+        printf("P%d,P%d ", stage->pd, stage->imm);
+        break;
+    }
+
+    case OPCODE_HALT:
+    {
+        printf("%s", stage->opcode_str);
+        break;
+    }
+    }
+}
 /* Debug function which prints the CPU stage content
  *
  * Note: You can edit this function to print in more detail
@@ -83,9 +193,17 @@ print_instruction(const CPU_Stage *stage)
 static void
 print_stage_content(const char *name, const CPU_Stage *stage)
 {
+    
     printf("%-15s: pc(%d) ", name, stage->pc);
     print_instruction(stage);
     printf("\n");
+    
+    if(strcmp(name,"Fetch"))
+    {
+        printf("%-15s: pc(%d) ", name, stage->pc);
+        print_instruction_PR(stage);
+        printf("\n");
+    }
 }
 
 /* Debug function which prints the register file
@@ -146,13 +264,14 @@ APEX_fetch(APEX_CPU *cpu)
         cpu->fetch.rd = current_ins->rd;
         cpu->fetch.rs1 = current_ins->rs1;
         cpu->fetch.rs2 = current_ins->rs2;
+        cpu->fetch.rs3 = current_ins->rs3;
         cpu->fetch.imm = current_ins->imm;
 
         /* Update PC for next instruction */
         cpu->pc += 4;
 
         /* Copy data from fetch latch to decode latch*/
-        cpu->decode = cpu->fetch;
+        cpu->DR1 = cpu->fetch;
 
         if (ENABLE_DEBUG_MESSAGES)
         {
@@ -173,146 +292,935 @@ APEX_fetch(APEX_CPU *cpu)
  * Note: You are free to edit this function according to your implementation
  */
 static void
-APEX_decode(APEX_CPU *cpu)
+APEX_DR1(APEX_CPU *cpu)
 {
-    if (cpu->decode.has_insn)
+    if (cpu->DR1.has_insn)
     {
-        /* Read operands from register file based on the instruction type */
-        switch (cpu->decode.opcode)
+        switch (cpu->DR1.opcode)
         {
         case OPCODE_ADD:
+        case OPCODE_DIV:
+        case OPCODE_MUL:
+        case OPCODE_SUB:
+        case OPCODE_XOR:
+        case OPCODE_OR:
+        case OPCODE_AND:
+        case OPCODE_LDR:
         {
-            cpu->decode.rs1_value = cpu->regs[cpu->decode.rs1];
-            cpu->decode.rs2_value = cpu->regs[cpu->decode.rs2];
+            setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, -1, cpu);
+            int free = getFreeRegFromPR(cpu);
+            if (free != -1)
+            {
+                cpu->DR1.prev_phy_reg = cpu->rt.reg[cpu->DR1.rd];
+                cpu->DR1.dest_arch_reg = cpu->DR1.rd;
+                cpu->rt.reg[cpu->DR1.rd] = free;
+                cpu->DR1.pd = free;
+                cpu->DR1.stall = 0;
+            }
+            else
+            {
+                cpu->DR1.stall = 1;
+                // stall nd break;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            break;
+            /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed
+            Also update the clock cycle of the dispatched instruction in IQ*/
+        }
+
+        case OPCODE_ADDL:
+        case OPCODE_SUBL:
+        case OPCODE_LOAD:
+        {
+            setSrcRegWithPR(cpu->DR1.rs1, -1, -1, cpu);
+            int free = getFreeRegFromPR(cpu);
+            if (free != -1)
+            {
+                cpu->rt.reg[cpu->DR1.rd] = free;
+                cpu->DR1.pd = free;
+                cpu->DR1.stall = 0;
+            }
+            else
+            {
+                cpu->DR1.stall = 1;
+                // stall nd break;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+
+            cpu->DR1.imm = cpu->DR1.imm;
+            break;
+            /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed*/
+        }
+        case OPCODE_MOVC:
+        {
+            int free = getFreeRegFromPR(cpu);
+            if (free != -1)
+            {
+                cpu->rt.reg[cpu->DR1.rd] = free;
+                cpu->DR1.pd = free;
+                cpu->DR1.stall = 0;
+            }
+            else
+            {
+                cpu->DR1.stall = 1;
+                // stall nd break;
+            }
+            break;
+        }
+        case OPCODE_NOP:
+        {
+            break;
+        }
+        case OPCODE_STR:
+        {
+            setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, cpu->DR1.rs3, cpu);
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps3)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps3].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps3)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps3].reg_invalid = 0;
+            }
+            break;
+            /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed*/
+        }
+        case OPCODE_STORE:
+        {
+            setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, -1, cpu);
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            break;
+        }
+        case OPCODE_CMP:
+        {
+            setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, -1, cpu);
+            int free = getFreeRegFromPR(cpu);
+            cpu->DR1.rd = free;
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.rs1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            break;
+            /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed*/
+        }
+        case OPCODE_JUMP:
+        {
+            setSrcRegWithPR(cpu->DR1.rs1, -1, -1, cpu);
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            break;
+            /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed*/
+        }
+        case OPCODE_BZ:
+        case OPCODE_BNZ:
+        {
+            // prediction
+            cpu->branch_reg = cpu->prev_cc;
+            if (cpu->pr.PR_File[cpu->branch_reg].reg_invalid == 0)
+            {
+                if (cpu->pr.PR_File[cpu->branch_reg].cc_flag == 0 ^ cpu->DR1.opcode == OPCODE_BZ)
+                {
+                    cpu->bTaken = 1;
+                }
+            }
+            if (cpu->fBus[0].tag == cpu->prev_cc)
+            {
+                cpu->pr.PR_File[cpu->prev_cc].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->prev_cc)
+            {
+                cpu->pr.PR_File[cpu->prev_cc].reg_invalid = 0;
+            }
+        }
+        case OPCODE_HALT:
+        {
+            break;
+        }
+        }
+        print_stage_content("DR1", &cpu->DR1);
+        if (cpu->DR1.stall)
+        {
+            return;
+        }
+        cpu->DR2 = cpu->DR1;
+        cpu->DR1.has_insn = FALSE;
+        /*If the IQ is full stall the fetch and DR2 stage}*/
+    }
+}
+
+static void 
+APEX_DR2(APEX_CPU *cpu)
+{
+    if (cpu->DR2.has_insn)
+    {
+        print_stage_content("DR2", &cpu->DR2);
+        if (isIQFull(cpu) || isLSQFull(cpu) || isROBFull(cpu))
+        {
+            return;
+        }
+        int fu_type = 0;
+        int src1_valid = 0;
+        int src1_value = 0;
+        int src2_valid = 0;
+        int src2_value = 0;
+        int dest = 0;
+
+        int rob_index = (cpu->rob->tail+1)%ROB_SIZE;
+        int lsq_index = (cpu->lsq->tail+1)%LSQ_SIZE;
+
+        int instruction_type = R2R;
+        
+        switch (cpu->DR2.opcode)
+        {
+        case OPCODE_ADD:
+        case OPCODE_DIV:
+        case OPCODE_SUB:
+        case OPCODE_CMP:
+        {
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
+            src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
+            dest = cpu->DR1.pd;
             break;
         }
 
-        case OPCODE_LOAD:
+        case OPCODE_MUL:
         {
-            cpu->decode.rs1_value = cpu->regs[cpu->decode.rs1];
+            fu_type = 3;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
+            src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
+            dest = cpu->DR1.pd;
+            break;
+
+        }
+
+        case OPCODE_ADDL:
+        case OPCODE_SUBL:
+        {
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = 1;
+            dest = cpu->DR1.rd;
+            break;
+        }
+
+        case OPCODE_XOR:
+        case OPCODE_OR:
+        case OPCODE_AND:
+        {
+            fu_type = 2;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
+            src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
+            dest = cpu->DR1.pd;
             break;
         }
 
         case OPCODE_MOVC:
         {
-            /* MOVC doesn't have register operands */
+            fu_type = 1;
+            src1_valid = 1;
+            src2_valid = 1;
+            dest = cpu->DR2.pd;
             break;
         }
+
+        case OPCODE_NOP:
+        case OPCODE_HALT:
+        {
+            fu_type = 1;
+            src1_valid = 1;
+            src2_valid = 1;
+            instruction_type = NOP;
+            break;
         }
 
-        /* Copy data from decode latch to execute latch*/
-        cpu->execute = cpu->decode;
-        cpu->decode.has_insn = FALSE;
-
-        if (ENABLE_DEBUG_MESSAGES)
+        case OPCODE_LDR:
         {
-            print_stage_content("Decode/RF", &cpu->decode);
-        }
-    }
-}
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
+            src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
+            dest = (lsq_index+1)*-1;
+            instruction_type = LOAD;
 
-/*
- * Execute Stage of APEX Pipeline
- *
- * Note: You are free to edit this function according to your implementation
- */
-static void
-APEX_execute(APEX_CPU *cpu)
-{
-    if (cpu->execute.has_insn)
-    {
-        /* Execute logic based on instruction type */
-        switch (cpu->execute.opcode)
-        {
-        case OPCODE_ADD:
-        {
-            cpu->execute.result_buffer = cpu->execute.rs1_value + cpu->execute.rs2_value;
-
-            /* Set the zero flag based on the result buffer */
-            if (cpu->execute.result_buffer == 0)
-            {
-                cpu->zero_flag = TRUE;
-            }
-            else
-            {
-                cpu->zero_flag = FALSE;
-            }
+            addLSQEntry(1,1,0,0,cpu->DR2.pd,1,0,0,rob_index,cpu);
             break;
         }
 
         case OPCODE_LOAD:
         {
-            cpu->execute.memory_address = cpu->execute.rs1_value + cpu->execute.imm;
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = 1;
+            dest = (lsq_index+1)*-1;
+            instruction_type = LOAD;
+
+            addLSQEntry(1,1,0,0,cpu->DR2.pd,1,0,0,rob_index,cpu);
+            break;
+        }
+
+        case OPCODE_STORE:
+        {
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
+            src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
+            dest = (lsq_index+1)*-1;
+            instruction_type = STORE;
+
+            addLSQEntry(1,0,0,0,dest,src1_valid,cpu->DR2.ps1,src1_value,rob_index,cpu);
+            return;
+        }
+
+        case OPCODE_STR:
+        {
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
+            src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
+            int src3_valid = !cpu->pr.PR_File[cpu->DR2.ps3].reg_invalid;
+            int src3_value = cpu->pr.PR_File[cpu->DR2.ps3].phy_Reg;
+            dest = (lsq_index+1)*-1;
+            instruction_type = STORE;
+
+            addLSQEntry(1,0,0,0,dest,src1_valid,cpu->DR2.ps1,src1_value,rob_index,cpu);
+            break;
+        }
+
+        case OPCODE_JUMP:
+        {
+            fu_type = 1;
+            src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
+            src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
+            src2_valid = 1;
+            instruction_type = NOP;
             break;
         }
 
         case OPCODE_BZ:
-        {
-            if (cpu->zero_flag == TRUE)
-            {
-                /* Calculate new PC, and send it to fetch unit */
-                cpu->pc = cpu->execute.pc + cpu->execute.imm;
-
-                /* Since we are using reverse callbacks for pipeline stages,
-                 * this will prevent the new instruction from being fetched in the current cycle*/
-                cpu->fetch_from_next_cycle = TRUE;
-
-                /* Flush previous stages */
-                cpu->decode.has_insn = FALSE;
-
-                /* Make sure fetch stage is enabled to start fetching from new PC */
-                cpu->fetch.has_insn = TRUE;
-            }
-            break;
-        }
-
         case OPCODE_BNZ:
         {
-            if (cpu->zero_flag == FALSE)
-            {
-                /* Calculate new PC, and send it to fetch unit */
-                cpu->pc = cpu->execute.pc + cpu->execute.imm;
-
-                /* Since we are using reverse callbacks for pipeline stages,
-                 * this will prevent the new instruction from being fetched in the current cycle*/
-                cpu->fetch_from_next_cycle = TRUE;
-
-                /* Flush previous stages */
-                cpu->decode.has_insn = FALSE;
-
-                /* Make sure fetch stage is enabled to start fetching from new PC */
-                cpu->fetch.has_insn = TRUE;
-            }
+            fu_type = 1;
+            src1_valid = 1;
+            src2_valid = 1;
+            instruction_type = NOP;
             break;
         }
 
-        case OPCODE_MOVC:
+        default:
         {
-            cpu->execute.result_buffer = cpu->execute.imm;
+            break;
+        }
+        
+        }
+        addROBEntry(1,instruction_type,cpu->DR2.pc,cpu->DR2.pd,cpu->DR2.prev_phy_reg,cpu->DR2.dest_arch_reg,lsq_index,0,cpu);
+        addIQEntry(1,fu_type,cpu->DR2.imm,src1_valid,cpu->DR2.ps1,src1_value,src2_valid,cpu->DR2.rs2,src2_value,dest,cpu);
+    }
+    APEX_IQ(cpu);
+}
 
-            /* Set the zero flag based on the result buffer */
-            if (cpu->execute.result_buffer == 0)
+
+static void APEX_IQ(APEX_CPU *cpu)
+{
+    int index = 0;
+    int loop = 1;
+    while(loop){
+        index = getIQEntry_Index(cpu, index);
+        if(index==-1){
+            return;
+        }
+        IQ_Entry *entry = cpu->iq->entry[index];
+        int fu_type = entry->fu_type;
+        switch(fu_type)
+        {
+            case 1:
             {
-                cpu->zero_flag = TRUE;
+                if(cpu->INT_FU.has_insn){
+                    index++;
+                    continue;
+                }
+                cpu->I_Queue.rs1_value = entry->src1_value;
+                cpu->I_Queue.rs2_value = entry->src2_value;
+                cpu->I_Queue.imm = entry->literal;
+                cpu->I_Queue.has_insn = TRUE;
+                cpu->I_Queue.pd = entry->dest;
+                cpu->INT_FU = cpu->I_Queue;
+                break;
+            }
+
+            case 2:
+            {
+                if(cpu->LOP_FU.has_insn){
+                    index++;
+                    continue;
+                }
+                cpu->I_Queue.rs1_value = entry->src1_value;
+                cpu->I_Queue.rs2_value = entry->src2_value;
+                cpu->I_Queue.imm = entry->literal;
+                cpu->I_Queue.has_insn = TRUE;
+                cpu->I_Queue.pd = entry->dest;
+                cpu->LOP_FU = cpu->I_Queue;
+                break;
+            }
+            
+            case 3:
+            {
+                if(cpu->MUL1_FU.has_insn){
+                    index++;
+                    continue;
+                }
+                cpu->I_Queue.rs1_value = entry->src1_value;
+                cpu->I_Queue.rs2_value = entry->src2_value;
+                cpu->I_Queue.imm = entry->literal;
+                cpu->I_Queue.has_insn = TRUE;
+                cpu->I_Queue.pd = entry->dest;
+                cpu->MUL1_FU = cpu->I_Queue;
+                break;
+            }
+
+            default:
+            {
+                break;
+            }
+        }
+    }
+    shiftIQElements(cpu, index);
+}
+
+
+static void
+APEX_INT_FU(APEX_CPU *cpu)
+{
+    if (cpu->INT_FU.has_insn)
+    {
+        print_stage_content("INT_FU", &cpu->INT_FU);
+        switch (cpu->INT_FU.opcode)
+        {
+        case OPCODE_ADD:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.rs2_value; // recieved from IQ or DR2(need to confirm)
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;       // PR write
+            if (cpu->INT_FU.result_buffer == 0)
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
             }
             else
             {
-                cpu->zero_flag = FALSE;
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
+            }
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+            break;
+        }
+        case OPCODE_DIV:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value / cpu->INT_FU.rs2_value;
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
+            if (cpu->INT_FU.result_buffer == 0)
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
+            }
+            else
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
+            }
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+
+            break;
+        }
+        case OPCODE_SUB:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value - cpu->INT_FU.rs2_value;
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
+            if (cpu->INT_FU.result_buffer == 0)
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
+            }
+            else
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
+            }
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+
+            break;
+        }
+        case OPCODE_SUBL:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value - cpu->INT_FU.imm;
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
+            if (cpu->INT_FU.result_buffer == 0)
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
+            }
+            else
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
+            }
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+
+            break;
+        }
+        case OPCODE_ADDL:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.imm;
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
+            if (cpu->INT_FU.result_buffer == 0)
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
+            }
+            else
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
+            }
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+
+            break;
+        }
+        case OPCODE_CMP: // need to discuss
+        {
+
+            if (cpu->INT_FU.rs1_value == cpu->INT_FU.rs2_value)
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
+            }
+            else
+            {
+                cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
+            }
+
+            break;
+        }
+        case OPCODE_BZ:
+        {
+            cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
+            // need to discuss
+        }
+        case OPCODE_BNZ:
+        {
+            cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
+            // need to discuss
+        }
+
+        case OPCODE_LDR:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.rs2_value;
+
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].busy = 1;
+            }
+            break;
+        }
+        case OPCODE_LOAD:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.imm;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].busy = 1;
+            }
+            break;
+        }
+        case OPCODE_STORE:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.imm;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].busy = 1;
+            }
+            break;
+        }
+        case OPCODE_STR:
+        {
+            cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value + cpu->INT_FU.rs2_value;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->INT_FU.result_buffer;
+                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].busy = 1;
+            }
+            break;
+        }
+        case OPCODE_JUMP:
+        {
+            cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
+            break;
+        }
+        }
+    }
+}
+
+static void
+APEX_LOP_FU(APEX_CPU *cpu)
+{
+    if (cpu->LOP_FU.has_insn)
+    {
+        print_stage_content("LOP_FU", &cpu->LOP_FU);
+        switch (cpu->LOP_FU.opcode)
+        {
+        case OPCODE_XOR:
+        {
+            cpu->LOP_FU.result_buffer = cpu->LOP_FU.rs1_value ^ cpu->LOP_FU.rs2_value;
+            cpu->pr.PR_File[cpu->LOP_FU.pd].phy_Reg = cpu->LOP_FU.result_buffer;
+
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->LOP_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->LOP_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->LOP_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->LOP_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+
+            break;
+        }
+        case OPCODE_OR:
+        {
+            cpu->LOP_FU.result_buffer = cpu->LOP_FU.rs1_value | cpu->LOP_FU.rs2_value;
+            cpu->pr.PR_File[cpu->LOP_FU.pd].phy_Reg = cpu->LOP_FU.result_buffer;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->LOP_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->LOP_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->LOP_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->LOP_FU.pd;
+                cpu->fBus[1].busy = 1;
+            }
+            break;
+        }
+        case OPCODE_AND:
+        {
+            cpu->LOP_FU.result_buffer = cpu->LOP_FU.rs1_value & cpu->LOP_FU.rs2_value;
+            cpu->pr.PR_File[cpu->LOP_FU.pd].phy_Reg = cpu->LOP_FU.result_buffer;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].data = cpu->LOP_FU.result_buffer;
+                cpu->fBus[0].tag = cpu->LOP_FU.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].data = cpu->LOP_FU.result_buffer;
+                cpu->fBus[1].tag = cpu->LOP_FU.pd;
+                cpu->fBus[1].busy = 1;
             }
             break;
         }
         }
-
-        /* Copy data from execute latch to memory latch*/
-        cpu->memory = cpu->execute;
-        cpu->execute.has_insn = FALSE;
-
-        if (ENABLE_DEBUG_MESSAGES)
-        {
-            print_stage_content("Execute", &cpu->execute);
-        }
     }
 }
+
+static void
+APEX_MUL1_FU(APEX_CPU *cpu)
+{
+    if (cpu->MUL1_FU.has_insn)
+    {
+        print_stage_content("MUL1_FU", &cpu->MUL1_FU);
+        if (cpu->MUL1_FU.opcode == OPCODE_MUL)
+        {
+            cpu->MUL1_FU.result_buffer = cpu->MUL1_FU.rs1_value * cpu->MUL1_FU.rs2_value;
+        }
+    }
+    cpu->MUL2_FU = cpu->MUL1_FU;
+}
+
+static void
+APEX_MUL2_FU(APEX_CPU *cpu)
+{
+    if (cpu->MUL2_FU.has_insn)
+    {
+        print_stage_content("MUL2_FU", &cpu->MUL2_FU);
+        if (cpu->MUL2_FU.opcode == OPCODE_MUL)
+        {
+            cpu->MUL2_FU.result_buffer = cpu->MUL2_FU.rs1_value * cpu->MUL2_FU.rs2_value;
+        }
+    }
+    cpu->MUL3_FU = cpu->MUL2_FU;
+}
+
+static void
+APEX_MUL3_FU(APEX_CPU *cpu)
+{
+    if (cpu->MUL3_FU.has_insn)
+    {
+        print_stage_content("MUL3_FU", &cpu->MUL3_FU);
+        if (cpu->MUL3_FU.opcode == OPCODE_MUL)
+        {
+            cpu->MUL3_FU.result_buffer = cpu->MUL3_FU.rs1_value * cpu->MUL3_FU.rs2_value;
+        }
+
+        if (!cpu->fBus[0].busy)
+        {
+            cpu->fBus[0].tag = cpu->MUL3_FU.pd;
+            cpu->fBus[0].busy = 1;
+        }
+        else if (!cpu->fBus[1].busy) // check for forw
+        {
+            cpu->fBus[1].tag = cpu->MUL3_FU.pd;
+            cpu->fBus[1].busy = 1;
+        }
+    }
+    // implement forwarding for tag
+    cpu->MUL4_FU = cpu->MUL3_FU;
+}
+
+static void
+APEX_MUL4_FU(APEX_CPU *cpu)
+{
+    if (cpu->MUL4_FU.has_insn)
+    {
+        print_stage_content("MUL4_FU", &cpu->MUL4_FU);
+        if (cpu->MUL4_FU.opcode == OPCODE_MUL)
+        {
+            cpu->MUL4_FU.result_buffer = cpu->MUL4_FU.rs1_value * cpu->MUL4_FU.rs2_value;
+        }
+        if (cpu->MUL3_FU.result_buffer == 0)
+        {
+            cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag = 1;
+        }
+        else
+        {
+            cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag = 0;
+        }
+        if (!cpu->fBus[0].busy)
+        {
+            cpu->fBus[0].cc = cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag;
+            cpu->fBus[0].data = cpu->MUL3_FU.result_buffer;
+            cpu->fBus[0].tag = cpu->MUL3_FU.pd;
+            cpu->fBus[0].busy = 1;
+        }
+        else if (!cpu->fBus[1].busy) // check for forw
+        {
+            cpu->fBus[1].cc = cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag;
+            cpu->fBus[1].data = cpu->MUL3_FU.result_buffer;
+            cpu->fBus[1].tag = cpu->MUL3_FU.pd;
+            cpu->fBus[1].busy = 1;
+        }
+    }
+    // pass it writeback or to the commit stage
+}
+
+// static void
+// APEX_decode(APEX_CPU *cpu)
+// {
+//     if (cpu->decode.has_insn)
+//     {
+//         /* Read operands from register file based on the instruction type */
+//         switch (cpu->decode.opcode)
+//         {
+//             case OPCODE_ADD:
+//             {
+//                 cpu->decode.rs1_value = cpu->regs[cpu->decode.rs1];
+//                 cpu->decode.rs2_value = cpu->regs[cpu->decode.rs2];
+//                 break;
+//             }
+
+//             case OPCODE_LOAD:
+//             {
+//                 cpu->decode.rs1_value = cpu->regs[cpu->decode.rs1];
+//                 break;
+//             }
+
+//             case OPCODE_MOVC:
+//             {
+//                 /* MOVC doesn't have register operands */
+//                 break;
+//             }
+//         }
+
+//         /* Copy data from decode latch to execute latch*/
+//         cpu->execute = cpu->decode;
+//         cpu->decode.has_insn = FALSE;
+
+//         if (ENABLE_DEBUG_MESSAGES)
+//         {
+//             print_stage_content("Decode/RF", &cpu->decode);
+//         }
+//     }
+// }
 
 /*
  * Memory Stage of APEX Pipeline
@@ -401,7 +1309,36 @@ APEX_writeback(APEX_CPU *cpu)
     /* Default */
     return 0;
 }
+/*Intialise PR and RT with default setup*/
+static void
+intialize_PR_RT(APEX_CPU *cpu)
+{
 
+    while (cpu->pr.head < 8)
+    {
+        cpu->rt.reg[cpu->pr.head] = cpu->pr.head;
+        cpu->pr.PR_File[cpu->pr.head].cc_flag = -1;
+        printf("P%d",cpu->rt.reg[cpu->pr.head]);
+        cpu->pr.head++;
+    }
+    int head = cpu->pr.head;
+    while(head <15)
+    {
+        cpu->pr.PR_File[head].free = head;
+        head++;
+    }
+
+}
+
+static void initialize_bus(APEX_CPU *cpu)
+{
+    for (int i = 0; i < 2; i++)
+    {
+        cpu->fBus[i].data = -1;
+        cpu->fBus[i].tag = -1;
+        cpu->fBus[i].cc = -1;
+    }
+}
 /*
  * This function creates and initializes APEX cpu.
  *
@@ -412,7 +1349,6 @@ APEX_cpu_init(const char *filename)
 {
     int i;
     APEX_CPU *cpu;
-
     if (!filename)
     {
         return NULL;
@@ -430,14 +1366,19 @@ APEX_cpu_init(const char *filename)
     memset(cpu->regs, 0, sizeof(int) * REG_FILE_SIZE);
     memset(cpu->data_memory, 0, sizeof(int) * DATA_MEMORY_SIZE);
     cpu->single_step = ENABLE_SINGLE_STEP;
-    
+
+    cpu->pr.head = 0;
+    cpu->pr.tail = 14;
+    initialize_bus(cpu);
+    intialize_PR_RT(cpu);
+
     cpu->iq = calloc(1, sizeof(IQ));
     cpu->iq->tail = -1;
-    
+
     cpu->lsq = calloc(1, sizeof(LSQ));
     cpu->lsq->head = -1;
     cpu->lsq->tail = -1;
-    
+
     cpu->rob = calloc(1, sizeof(ROB));
     cpu->rob->head = -1;
     cpu->rob->tail = -1;
@@ -535,11 +1476,33 @@ int isIQEmpty(APEX_CPU *cpu)
     return 0;
 }
 
+int getIQEntry_Index(APEX_CPU *cpu, int index)
+{
+    if (isIQEmpty(cpu))
+    {
+        return -1;
+    }
+    else
+    {
+        int tail = cpu->iq->tail;
+        int i = index;
+        while (i <= tail)
+        {
+            IQ_Entry *entry = cpu->iq->entry[i];
+            if (isIQEntryReady(entry))
+            {
+                return i;
+            }
+            i++;
+        }
+        return -1;
+    }
+}
+
 IQ_Entry *getIQEntry(APEX_CPU *cpu)
 {
     if (isIQEmpty(cpu))
     {
-        printf("IQ is empty\n");
         return NULL;
     }
     else
@@ -634,7 +1597,7 @@ void addLSQEntry(
     cpu->lsq->tail = tail;
 }
 
-LSQ_Entry* getLSQEntry(APEX_CPU *cpu)
+LSQ_Entry *getLSQEntry(APEX_CPU *cpu)
 {
     if (isLSQEmpty(cpu))
     {
@@ -643,7 +1606,7 @@ LSQ_Entry* getLSQEntry(APEX_CPU *cpu)
     int head = cpu->lsq->head;
     int tail = cpu->lsq->tail;
     LSQ_Entry *entry = cpu->lsq->entry[head];
-    if(head == tail)
+    if (head == tail)
     {
         cpu->lsq->head = -1;
         cpu->lsq->tail = -1;
@@ -729,7 +1692,7 @@ void addROBEntry(
     cpu->rob->tail = tail;
 }
 
-ROB_Entry* getROBEntry(APEX_CPU *cpu)
+ROB_Entry *getROBEntry(APEX_CPU *cpu)
 {
     if (isROBEmpty(cpu))
     {
@@ -738,7 +1701,7 @@ ROB_Entry* getROBEntry(APEX_CPU *cpu)
     int head = cpu->rob->head;
     int tail = cpu->rob->tail;
     ROB_Entry *entry = cpu->rob->entry[head];
-    if(head == tail)
+    if (head == tail)
     {
         cpu->rob->head = -1;
         cpu->rob->tail = -1;
@@ -773,13 +1736,13 @@ int isROBEmpty(APEX_CPU *cpu)
 
 void updateROBEntry(APEX_CPU *cpu, int rob_index, int mem_error_code)
 {
-    if(rob_index>=cpu->rob->head && rob_index<=cpu->rob->tail){
+    if (rob_index >= cpu->rob->head && rob_index <= cpu->rob->tail)
+    {
         cpu->rob->entry[rob_index]->mem_error_code = mem_error_code;
-    } 
+    }
 }
 
 /*----------------------------------Reorder buffer queue utilities end-----------------------------------*/
-
 
 /*----------------------------------Branch target buffer utilities start-----------------------------------*/
 
@@ -788,21 +1751,21 @@ void addBTBEntry(int pc_value, int target_address, APEX_CPU *cpu)
     BTB_Entry *entry = malloc(sizeof(BTB_Entry));
     entry->pc_value = pc_value;
     entry->target_address = target_address;
-    
+
     int tail = cpu->btb->tail;
     tail = (tail + 1) % BTB_SIZE;
     cpu->btb->entry[tail] = entry;
     cpu->btb->tail = tail;
 }
 
-BTB_Entry* getBTBEntry(int pc_value, APEX_CPU *cpu)
+BTB_Entry *getBTBEntry(int pc_value, APEX_CPU *cpu)
 {
-    BTB_Entry *entries[] = cpu->btb->entry;
     int i = 0;
-    while(i<BTB_SIZE)
+    while (i < BTB_SIZE)
     {
-        BTB_Entry *entry = entries[i];
-        if(entry->pc_value == pc_value){
+        BTB_Entry *entry = cpu->btb->entry[i];
+        if (entry->pc_value == pc_value)
+        {
             return entry;
         }
     }
@@ -810,7 +1773,6 @@ BTB_Entry* getBTBEntry(int pc_value, APEX_CPU *cpu)
 }
 
 /*----------------------------------Branch target buffer utilities end-----------------------------------*/
-
 
 /*
  * APEX CPU simulation loop
@@ -836,15 +1798,23 @@ void APEX_cpu_run(APEX_CPU *cpu)
             break;
         }
 
-        APEX_memory(cpu);
-        APEX_execute(cpu);
-        APEX_decode(cpu);
+        // APEX_memory(cpu);
+        APEX_MUL4_FU(cpu);
+        APEX_MUL3_FU(cpu);
+        APEX_MUL2_FU(cpu);
+        APEX_MUL1_FU(cpu);
+        APEX_LOP_FU(cpu);
+        APEX_INT_FU(cpu);
+        // APEX_decode(cpu);
+        APEX_DR2(cpu);
+        APEX_DR1(cpu);
         APEX_fetch(cpu);
 
         print_reg_file(cpu);
 
         if (cpu->single_step)
         {
+            user_prompt_val = 'r';
             printf("Press any key to advance CPU Clock or <q> to quit:\n");
             scanf("%c", &user_prompt_val);
 

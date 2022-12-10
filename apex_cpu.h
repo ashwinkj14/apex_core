@@ -19,13 +19,44 @@ typedef struct APEX_Instruction
     int rd;
     int rs1;
     int rs2;
+    int rs3;
     int imm;
 } APEX_Instruction;
+
+typedef struct  Forwarding_Bus
+{
+    int tag;
+    int busy;
+    int data;
+    int cc;
+}FB;
+
+/* Format of Physical Register*/
+typedef struct Physical_Reg_format
+{
+    int phy_Reg;
+    int reg_invalid;
+    int cc_flag;
+    int free;
+}PRF;
+
+typedef struct Physical_Reg
+{
+    PRF PR_File[15];
+    int head;
+    int tail;
+}PR;
+
+/* Format of Rename Table*/
+typedef struct Rename_Table
+{
+    int reg[8];
+}RT;
 
 typedef struct IQ_Entry
 {
     int allocated_bit;
-    int fu_type;
+    int fu_type; //INT_FU (1), LOGICAL_FU (2), MUL_FU (3) 
     int literal;
     int src1_valid_bit;
     int src1_tag;
@@ -102,13 +133,22 @@ typedef struct CPU_Stage
     int opcode;
     int rs1;
     int rs2;
+    int rs3;
     int rd;
+    int ps1;
+    int ps2;
+    int ps3;
+    int pd;
     int imm;
     int rs1_value;
     int rs2_value;
+    int rs3_value;
     int result_buffer;
+    int prev_phy_reg;
+    int dest_arch_reg;
     int memory_address;
     int has_insn;
+    int stall;
 } CPU_Stage;
 
 /* Model of APEX CPU */
@@ -124,13 +164,31 @@ typedef struct APEX_CPU
     int single_step;               /* Wait for user input after every cycle */
     int zero_flag;                 /* {TRUE, FALSE} Used by BZ and BNZ to branch */
     int fetch_from_next_cycle;
+    int prev_cc;
+    int branch_reg;
+    int LSI;
+    int conditional_pc;
+    int cmp_flag;
+    int bTaken;
+    
 
     /* Pipeline stages */
     CPU_Stage fetch;
-    CPU_Stage decode;
-    CPU_Stage execute;
+    CPU_Stage DR1;
+    CPU_Stage DR2;
+    CPU_Stage I_Queue;
+    //CPU_Stage execute;
+    CPU_Stage INT_FU;
+    CPU_Stage LOP_FU;
+    CPU_Stage MUL1_FU;
+    CPU_Stage MUL2_FU;
+    CPU_Stage MUL3_FU;
+    CPU_Stage MUL4_FU;
     CPU_Stage memory;
     CPU_Stage writeback;
+    RT rt;
+    PR pr;
+    FB fBus[2];
 
     IQ *iq;
     LSQ *lsq;
@@ -154,11 +212,13 @@ void addIQEntry(
     );
 
 IQ_Entry* getIQEntry(APEX_CPU *cpu);
+int getIQEntry_Index(APEX_CPU *cpu, int index);
 int isIQFull(APEX_CPU *cpu);
 int isIQEmpty(APEX_CPU *cpu);
 int isIQEntryReady(IQ_Entry *entry);
 void shiftIQElements(APEX_CPU *cpu, int pos);
 void updateIQEntry(APEX_CPU *cpu, int src_tag, int src_value);
+static void APEX_IQ(APEX_CPU *cpu);
 
 //LSQ
 void addLSQEntry(
