@@ -66,6 +66,8 @@ typedef struct IQ_Entry
     int src2_tag;
     int src2_value;
     int dest;
+    int waitingForBranch;
+    int bis_index;
 }IQ_Entry;
 
 typedef struct LSQ_Entry
@@ -97,7 +99,14 @@ typedef struct BTB_Entry
 {
     int pc_value;
     int target_address;
+    int prediction;
 }BTB_Entry;
+
+typedef struct BIS_Entry
+{
+    int pc_value;
+    int rob_index;
+}BIS_Entry;
 
 typedef struct IQ
 {
@@ -126,6 +135,13 @@ typedef struct BTB
     int tail;
 }BTB;
 
+typedef struct BIS
+{
+    BIS_Entry *entry[BIS_SIZE];
+    int tail;
+    int head;
+}BIS;
+
 /* Model of CPU stage latch */
 typedef struct CPU_Stage
 {
@@ -150,6 +166,9 @@ typedef struct CPU_Stage
     int memory_address;
     int has_insn;
     int stall;
+    int branch_reg;
+    int branch_prediction;
+    int waitingForBranch;
 } CPU_Stage;
 
 /* Model of APEX CPU */
@@ -166,10 +185,10 @@ typedef struct APEX_CPU
     int zero_flag;                 /* {TRUE, FALSE} Used by BZ and BNZ to branch */
     int fetch_from_next_cycle;
     int prev_cc;
-    int branch_reg;
+    int waitingForBranch;
+    int propogate_NOP;
     int conditional_pc;
     int cmp_flag;
-    int bTaken;
     
 
     /* Pipeline stages */
@@ -194,6 +213,7 @@ typedef struct APEX_CPU
     LSQ lsq;
     ROB rob;
     BTB btb;
+    BIS bis;
 } APEX_CPU;
 
 //IQ
@@ -208,6 +228,8 @@ void addIQEntry(
     int src2_tag,
     int src2_value,
     int dest,
+    int waitingForBranch,
+    int bis_index,
     APEX_CPU *cpu
     );
 
@@ -263,6 +285,12 @@ void updateROBEntry(APEX_CPU *cpu, int src_tag, int src_value);
 //BTB
 void addBTBEntry(int pc_value, int target_address, APEX_CPU *cpu);
 BTB_Entry* getBTBEntry(int pc_value, APEX_CPU *cpu);
+void BTBReplacement(APEX_CPU *cpu, BTB_Entry *entry);
+int isBTBFull(APEX_CPU *cpu);
+
+//BIS
+void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index);
+int isBISFull(APEX_CPU *cpu);
 
 APEX_Instruction *create_code_memory(const char *filename, int *size);
 APEX_CPU *APEX_cpu_init(const char *filename);

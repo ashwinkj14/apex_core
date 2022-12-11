@@ -22,6 +22,7 @@
 #define LSQ_SIZE 4
 #define ROB_SIZE 12
 #define BTB_SIZE 4
+#define BIS_SIZE 8
 
 #define R2R 1
 #define LOAD 2

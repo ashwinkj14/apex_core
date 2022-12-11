@@ -243,7 +243,17 @@ static void
 APEX_fetch(APEX_CPU *cpu)
 {
     APEX_Instruction *current_ins;
-
+    if(cpu->waitingForBranch)
+    {
+        strcpy(cpu->fetch.opcode_str, "NOP");
+        cpu->fetch.opcode = OPCODE_NOP;
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_content("Fetch", &cpu->fetch);
+        }
+        cpu->DR1 = cpu->fetch;
+        cpu->DR1.has_insn = FALSE;
+    }
     if (cpu->fetch.has_insn)
     {
         /* This fetches new branch target instruction from next cycle */
@@ -254,6 +264,7 @@ APEX_fetch(APEX_CPU *cpu)
             /* Skip this cycle*/
             return;
         }
+
 
         /* Store current PC in fetch latch */
         cpu->fetch.pc = cpu->pc;
@@ -463,13 +474,23 @@ APEX_DR1(APEX_CPU *cpu)
         case OPCODE_BNZ:
         {
             // prediction
-            cpu->branch_reg = cpu->prev_cc;
-            if (cpu->pr.PR_File[cpu->branch_reg].reg_invalid == 0)
+            cpu->DR1.branch_reg = cpu->prev_cc;
+            if (cpu->pr.PR_File[cpu->DR1.branch_reg].reg_invalid == 0)
             {
-                if (cpu->pr.PR_File[cpu->branch_reg].cc_flag == 0 ^ cpu->DR1.opcode == OPCODE_BZ)
+                if (cpu->pr.PR_File[cpu->DR1.branch_reg].cc_flag == 1 ^ cpu->DR1.opcode == OPCODE_BZ)
                 {
-                    cpu->bTaken = 1;
+                    if(cpu->DR1.branch_prediction){
+                        updateBTBEntry(cpu->DR1.pc, 0, cpu);
+                        cpu->fetch_from_next_cycle = TRUE;
+                        cpu->pc = cpu->DR1.pc + 4;
                 }
+            }
+        }
+            if(cpu->DR1.imm < 0)
+            {
+                cpu->DR1.branch_prediction = 1;
+                cpu->DR1.waitingForBranch = 1;
+                cpu->waitingForBranch = 1;
             }
         }
         case OPCODE_HALT:
@@ -494,7 +515,7 @@ APEX_DR2(APEX_CPU *cpu)
     if (cpu->DR2.has_insn)
     {
 
-        if (isIQFull(cpu) || isLSQFull(cpu) || isROBFull(cpu))
+        if (isIQFull(cpu) || isLSQFull(cpu) || isROBFull(cpu) || isBISFull(cpu))
         {
             return;
         }
@@ -662,6 +683,19 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = 1;
             src2_valid = 1;
             instruction_type = SKIP;
+            addBISEntry(cpu, cpu->DR2.pc, rob_index);
+            if (cpu->pr.PR_File[cpu->DR2.branch_reg].reg_invalid == 0)
+            {
+                if (cpu->pr.PR_File[cpu->DR2.branch_reg].cc_flag == 1 ^ cpu->DR2.opcode == OPCODE_BZ)
+                {
+                    if(cpu->DR2.branch_prediction){
+                        updateBTBEntry(cpu->DR2.pc, 0, cpu);
+                        cpu->fetch_from_next_cycle = TRUE;
+                        cpu->pc = cpu->DR2.pc + 4;
+                        cpu->DR1.has_insn = FALSE;
+                    }
+                }
+            }
             break;
         }
 
@@ -671,7 +705,7 @@ APEX_DR2(APEX_CPU *cpu)
         }
         }
         addROBEntry(1, instruction_type, cpu->DR2.pc, cpu->DR2.pd, cpu->DR2.prev_phy_reg, cpu->DR2.dest_arch_reg, lsq_index, 0, cpu);
-        addIQEntry(1, fu_type, cpu->DR2.imm, src1_valid, cpu->DR2.ps1, src1_value, src2_valid, cpu->DR2.rs2, src2_value, dest, cpu);
+        addIQEntry(1, fu_type, cpu->DR2.imm, src1_valid, cpu->DR2.ps1, src1_value, src2_valid, cpu->DR2.rs2, src2_value, dest, cpu->DR2.waitingForBranch, cpu->bis.tail, cpu);
         print_stage_content("DR2", &cpu->DR2);
         cpu->I_Queue = cpu->DR2;
         cpu->DR2.has_insn = FALSE;
@@ -726,6 +760,7 @@ static void APEX_IQ(APEX_CPU *cpu)
             cpu->I_Queue.imm = cpu->iq.entry[index]->literal;
             cpu->I_Queue.has_insn = TRUE;
             cpu->I_Queue.pd = cpu->iq.entry[index]->dest;
+            cpu->I_Queue.waitingForBranch = cpu->iq.entry[index]->waitingForBranch;
             cpu->INT_FU = cpu->I_Queue;
             break;
         }
@@ -954,15 +989,15 @@ APEX_INT_FU(APEX_CPU *cpu)
             break;
         }
         case OPCODE_BZ:
-        {
-            cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
-            // need to discuss
-            break;
-        }
         case OPCODE_BNZ:
         {
             cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
-            // need to discuss
+            if(cpu->I_Queue.waitingForBranch)
+        {
+                cpu->waitingForBranch = 0;
+                cpu->pc = cpu->conditional_pc;
+                addBTBEntry(cpu->INT_FU.pc, cpu->conditional_pc, cpu);
+            }
             break;
         }
 
@@ -1148,7 +1183,6 @@ APEX_MUL1_FU(APEX_CPU *cpu)
         {
             cpu->MUL1_FU.result_buffer = cpu->MUL1_FU.rs1_value * cpu->MUL1_FU.rs2_value;
         }
-        printf("REG Invalid = %d",cpu->pr.PR_File[cpu->MUL1_FU.pd].reg_invalid);
         cpu->MUL2_FU = cpu->MUL1_FU;
         cpu->MUL1_FU.has_insn = FALSE;
     }
@@ -1164,7 +1198,6 @@ APEX_MUL2_FU(APEX_CPU *cpu)
         {
             cpu->MUL2_FU.result_buffer = cpu->MUL2_FU.rs1_value * cpu->MUL2_FU.rs2_value;
         }
-        printf("SENDING TO MUL 3");
         cpu->MUL3_FU = cpu->MUL2_FU;
         cpu->MUL2_FU.has_insn = FALSE;
         cpu->MUL3_FU.has_insn = TRUE;
@@ -1495,6 +1528,9 @@ APEX_cpu_init(const char *filename)
 
     cpu->btb.tail = -1;
 
+    cpu->bis.head = -1;
+    cpu->bis.tail = -1;
+
     /* Parse input file and create code memory */
     cpu->code_memory = create_code_memory(filename, &cpu->code_memory_size);
     if (!cpu->code_memory)
@@ -1539,6 +1575,8 @@ void addIQEntry(
     int src2_tag,
     int src2_value,
     int dest,
+    int waitingForBranch,
+    int bis_index,
     APEX_CPU *cpu)
 {
 
@@ -1884,17 +1922,80 @@ void updateROBEntry(APEX_CPU *cpu, int rob_index, int mem_error_code)
 /*----------------------------------Reorder buffer queue utilities end-----------------------------------*/
 
 /*----------------------------------Branch target buffer utilities start-----------------------------------*/
+int isBTBFull(APEX_CPU *cpu)
+{
+   int i=0; 
+   while(i<BTB_SIZE)
+   {
+    BTB_Entry *entry = cpu->btb.entry[i];
+    if(entry->prediction == 0)
+    {
+        return i;
+    }
+    if(entry ==NULL)
+    {
+        return -1;
+    }
+    i++;
+   }
+   return -2;
+}
+void BTBReplacement(APEX_CPU *cpu, BTB_Entry *entry)
+{
+    int i = 0;
+    int min = 100000000;
+    int tail;
+    while (i < BTB_SIZE)
+    {
+        BTB_Entry *entry = cpu->btb.entry[i];
+        if (entry->pc_value <min)
+        {
+            min = entry->pc_value;
+            tail =i;
+        }
+        i++;
+    }
+    cpu->btb.entry[tail] = entry;
+    cpu->btb.tail = tail;
+}
 
 void addBTBEntry(int pc_value, int target_address, APEX_CPU *cpu)
 {
     BTB_Entry *entry = malloc(sizeof(BTB_Entry));
     entry->pc_value = pc_value;
     entry->target_address = target_address;
-
+    int btbInd = isBTBFull(cpu);
+    if (btbInd==-2)
+    {
+        BTBReplacement(cpu,entry);
+    }
+    else if(btbInd != -1)
+    {
+        int tail = btbInd;
+        cpu->btb.entry[tail] = entry;
+        cpu->btb.tail = tail;
+    }
+    else{
     int tail = cpu->btb.tail;
     tail = (tail + 1) % BTB_SIZE;
     cpu->btb.entry[tail] = entry;
     cpu->btb.tail = tail;
+    }
+}
+
+void updateBTBEntry(int pc_value, int prediction, APEX_CPU *cpu)
+{
+    int tail = cpu->btb.tail;
+    int i = 0;
+    while(i<=tail)
+    {
+        BTB_Entry *entry = cpu->btb.entry[i];
+        if(entry->pc_value == pc_value){
+            entry->prediction = prediction;
+            return;
+        }
+        i++;
+    }
 }
 
 BTB_Entry *getBTBEntry(int pc_value, APEX_CPU *cpu)
@@ -1912,6 +2013,40 @@ BTB_Entry *getBTBEntry(int pc_value, APEX_CPU *cpu)
 }
 
 /*----------------------------------Branch target buffer utilities end-----------------------------------*/
+
+/*----------------------------------Branch Instruction stack utilities start-----------------------------------*/
+
+void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index)
+{
+    if(isBISFull(cpu)){
+        return;
+    }
+    BIS_Entry *entry = malloc(sizeof(BIS_Entry));
+    entry->rob_index = rob_index;
+    entry->pc_value = pc_value;
+
+    int tail = cpu->bis.tail;
+    int head = cpu->bis.head;
+    if(head == -1){
+        cpu->bis.head = 0;
+    }
+    tail = (tail + 1) % BIS_SIZE;
+    cpu->bis.entry[tail] = entry;
+    cpu->bis.tail = tail;
+}
+
+int isBISFull(APEX_CPU *cpu)
+{
+    int head = cpu->bis.head;
+    int tail = cpu->bis.tail;
+    if ((head == tail + 1) || (head == 0 && tail == ROB_SIZE - 1))
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/*----------------------------------Branch Instruction stack utilities end-----------------------------------*/
 
 /*
  * APEX CPU simulation loop
