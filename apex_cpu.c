@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-// #include "file_parser.c"
+#include "file_parser.c"
 #include "apex_cpu.h"
 #include "apex_macros.h"
 
@@ -555,7 +555,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = (lsq_index + 1) * -1;
+            dest = lsq_index;
             instruction_type = LOAD;
 
             addLSQEntry(1, 1, 0, 0, cpu->DR2.pd, 1, 0, 0, rob_index, cpu);
@@ -568,7 +568,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            dest = (lsq_index + 1) * -1;
+            dest = lsq_index;
             instruction_type = LOAD;
 
             addLSQEntry(1, 1, 0, 0, cpu->DR2.pd, 1, 0, 0, rob_index, cpu);
@@ -582,11 +582,11 @@ APEX_DR2(APEX_CPU *cpu)
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = (lsq_index + 1) * -1;
+            dest = lsq_index;
             instruction_type = STORE;
 
             addLSQEntry(1, 0, 0, 0, dest, src1_valid, cpu->DR2.ps1, src1_value, rob_index, cpu);
-            return;
+            break;
         }
 
         case OPCODE_STR:
@@ -598,7 +598,7 @@ APEX_DR2(APEX_CPU *cpu)
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
             int src3_valid = !cpu->pr.PR_File[cpu->DR2.ps3].reg_invalid;
             int src3_value = cpu->pr.PR_File[cpu->DR2.ps3].phy_Reg;
-            dest = (lsq_index + 1) * -1;
+            dest = lsq_index;
             instruction_type = STORE;
 
             addLSQEntry(1, 0, 0, 0, dest, src1_valid, cpu->DR2.ps1, src1_value, rob_index, cpu);
@@ -636,16 +636,28 @@ APEX_DR2(APEX_CPU *cpu)
         cpu->I_Queue = cpu->DR2;
         cpu->DR2.has_insn = FALSE;
     }
-    APEX_IQ(cpu);
+}
+
+static void APEX_LSQ(APEX_CPU *cpu)
+{
+    if (cpu->fBus[0].busy)
+    {
+        updateLSQEntry(cpu, cpu->fBus[0].tag, cpu->fBus[0].data);
+    }
+    if (cpu->fBus[1].busy)
+    {
+        updateLSQEntry(cpu, cpu->fBus[1].tag, cpu->fBus[1].data);
+    }
+    
 }
 
 static void APEX_IQ(APEX_CPU *cpu)
 {
-    if (!cpu->fBus[0].busy)
+    if (cpu->fBus[0].busy)
     {
         updateIQEntry(cpu, cpu->fBus[0].tag, cpu->fBus[0].isDataFwd, cpu->fBus[0].data);
     }
-    if (!cpu->fBus[1].busy)
+    if (cpu->fBus[1].busy)
     {
         updateIQEntry(cpu, cpu->fBus[1].tag, cpu->fBus[1].isDataFwd, cpu->fBus[1].data);
     }
@@ -828,7 +840,6 @@ APEX_INT_FU(APEX_CPU *cpu)
         case OPCODE_SUBL:
         {
             cpu->INT_FU.result_buffer = cpu->INT_FU.rs1_value - cpu->INT_FU.imm;
-            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
             if (cpu->INT_FU.result_buffer == 0)
             {
                 cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
@@ -922,13 +933,13 @@ APEX_INT_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[1].busy = 1;
             }
             break;
@@ -939,13 +950,13 @@ APEX_INT_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[1].busy = 1;
             }
             break;
@@ -976,13 +987,13 @@ APEX_INT_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[1].busy = 1;
             }
             break;
@@ -993,13 +1004,13 @@ APEX_INT_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[0].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = (cpu->LSI + 1) * (-1);
+                cpu->fBus[1].tag = (cpu->INT_FU.pd + 1) * (-1);
                 cpu->fBus[1].busy = 1;
             }
             break;
@@ -1219,6 +1230,7 @@ int do_commit(APEX_CPU *cpu)
             {
                 return 0;
             }
+            cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
             enqueueFreeList(entry->prev_phy_reg, cpu);
         }
         break;
@@ -1382,9 +1394,11 @@ static void initialize_bus(APEX_CPU *cpu)
 {
     for (int i = 0; i < 2; i++)
     {
-        cpu->fBus[i].data = -1;
-        cpu->fBus[i].tag = -1;
-        cpu->fBus[i].cc = -1;
+        cpu->fBus[i].data = 0;
+        cpu->fBus[i].tag = 0;
+        cpu->fBus[i].cc = 0;
+        cpu->fBus[i].isDataFwd = FALSE;
+        cpu->fBus[i].busy = 0;
     }
 }
 /*
@@ -1632,6 +1646,10 @@ void addLSQEntry(
     entry->rob_index = rob_index;
 
     int tail = cpu->lsq.tail;
+    int head = cpu->lsq.head;
+    if(head == -1){
+        cpu->lsq.head = 0;
+    }
     tail = (tail + 1) % LSQ_SIZE;
     cpu->lsq.entry[tail] = entry;
     cpu->lsq.tail = tail;
@@ -1681,19 +1699,34 @@ int isLSQEmpty(APEX_CPU *cpu)
 
 void updateLSQEntry(APEX_CPU *cpu, int src_tag, int src_value)
 {
-    int tail = cpu->lsq.tail;
-    int i = 0;
-    while (i <= tail)
+    if (src_tag < 0)
     {
-
-        if (cpu->lsq.entry[i]->lost == 0)
-        {
-            if (cpu->lsq.entry[i]->src_tag == src_tag)
-            {
-                cpu->lsq.entry[i]->src_valid_bit = 1;
-            }
+        int index = (src_tag * -1) - 1;
+        LSQ_Entry *entry = cpu->lsq.entry[index];
+        cpu->lsq.entry[index]->mem_address = src_value;
+        entry->mem_valid_bit = 1;
+        return;
+    }else{
+        int i = cpu->lsq.head;
+        if(i == -1){
+            return;
         }
-        i++;
+        int tail = cpu->lsq.tail;
+        while(i<=tail)
+        {
+            LSQ_Entry *entry = cpu->lsq.entry[i];
+            if(entry->lost == 0)
+            {
+                if(entry->src_tag == src_tag)
+                {
+                    entry->src_valid_bit = 1;
+                    entry->src_value = src_value;
+                    // printf("SRC TAG = %d, SRC VALUE = %d",src_tag, src_value);
+                    return;
+                }
+            }
+            i++;
+        }
     }
 }
 /*----------------------------------Load Store Queue utilities end-----------------------------------*/
@@ -1862,13 +1895,16 @@ void APEX_cpu_run(APEX_CPU *cpu)
 
         APEX_INT_FU(cpu);
 
+        APEX_LSQ(cpu);
+        APEX_IQ(cpu);
+
         APEX_DR2(cpu);
         APEX_DR1(cpu);
 
         APEX_fetch(cpu);
 
         print_reg_file(cpu);
-        
+
         cpu->fBus[0].busy = 0;
         cpu->fBus[1].busy = 0;
 
@@ -1876,7 +1912,7 @@ void APEX_cpu_run(APEX_CPU *cpu)
         {
             user_prompt_val = 'r';
             printf("Press any key to advance CPU Clock or <q> to quit:\n");
-            //scanf("%c", &user_prompt_val);
+            // scanf("%c", &user_prompt_val);
 
             if ((user_prompt_val == 'Q') || (user_prompt_val == 'q'))
             {

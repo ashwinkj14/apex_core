@@ -167,7 +167,6 @@ typedef struct APEX_CPU
     int fetch_from_next_cycle;
     int prev_cc;
     int branch_reg;
-    int LSI;
     int conditional_pc;
     int cmp_flag;
     int bTaken;
@@ -240,7 +239,7 @@ int isLSQEmpty(APEX_CPU *cpu);
 int isLSQEntryReady(LSQ_Entry *entry);
 int getLSQEntry(APEX_CPU *cpu);
 void updateLSQEntry(APEX_CPU *cpu, int src_tag, int src_value);
-
+static void APEX_LSQ(APEX_CPU *cpu);
 
 //ROB
 void addROBEntry(
