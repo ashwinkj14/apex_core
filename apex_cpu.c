@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "file_parser.c"
+// #include "file_parser.c"
 #include "apex_cpu.h"
 #include "apex_macros.h"
 
@@ -47,11 +47,12 @@ static int getFreeRegFromPR(APEX_CPU *cpu)
         return -1;
     }
     int index = cpu->pr.head;
+    
     if (cpu->DR1.opcode == OPCODE_ADD || cpu->DR1.opcode == OPCODE_SUB || cpu->DR1.opcode == OPCODE_DIV || cpu->DR1.opcode == OPCODE_MUL || cpu->DR1.opcode == OPCODE_ADDL || cpu->DR1.opcode == OPCODE_SUBL || cpu->DR1.opcode == OPCODE_CMP)
     {
         cpu->prev_cc = cpu->pr.PR_File[index].free;
     }
-
+    
     if (cpu->pr.tail == cpu->pr.head)
     {
         cpu->pr.tail = -1;
@@ -61,8 +62,10 @@ static int getFreeRegFromPR(APEX_CPU *cpu)
     {
         cpu->pr.head = (++cpu->pr.head) % 15;
     }
-    cpu->pr.PR_File[index].reg_invalid = 1;
-    return cpu->pr.PR_File[index].free;
+
+    int free = cpu->pr.PR_File[index].free;
+    cpu->pr.PR_File[free].reg_invalid = 1;
+    return free;
 }
 
 static void setSrcRegWithPR(int r1, int r2, int r3, APEX_CPU *cpu)
@@ -297,9 +300,43 @@ APEX_DR1(APEX_CPU *cpu)
     {
         switch (cpu->DR1.opcode)
         {
+        case OPCODE_MUL:
+        {
+            setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, -1, cpu);
+            int free = getFreeRegFromPR(cpu);
+            if (free != -1)
+            {
+                cpu->DR1.prev_phy_reg = cpu->rt.reg[cpu->DR1.rd];
+                cpu->DR1.dest_arch_reg = cpu->DR1.rd;
+                cpu->rt.reg[cpu->DR1.rd] = free;
+                cpu->DR1.pd = free;
+                cpu->DR1.stall = 0;
+            }
+            else
+            {
+                cpu->DR1.stall = 1;
+                // stall nd break;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps1)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
+            }
+            if (cpu->fBus[0].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            if (cpu->fBus[1].tag == cpu->DR1.ps2)
+            {
+                cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
+            }
+            break;
+        }
         case OPCODE_ADD:
         case OPCODE_DIV:
-        case OPCODE_MUL:
         case OPCODE_SUB:
         case OPCODE_XOR:
         case OPCODE_OR:
@@ -350,6 +387,7 @@ APEX_DR1(APEX_CPU *cpu)
             int free = getFreeRegFromPR(cpu);
             if (free != -1)
             {
+                cpu->DR1.prev_phy_reg = cpu->rt.reg[cpu->DR1.rd];
                 cpu->rt.reg[cpu->DR1.rd] = free;
                 cpu->DR1.dest_arch_reg = cpu->DR1.rd;
                 cpu->DR1.pd = free;
@@ -378,6 +416,7 @@ APEX_DR1(APEX_CPU *cpu)
             int free = getFreeRegFromPR(cpu);
             if (free != -1)
             {
+                cpu->DR1.prev_phy_reg = cpu->rt.reg[cpu->DR1.rd];
                 cpu->rt.reg[cpu->DR1.rd] = free;
                 cpu->DR1.dest_arch_reg = cpu->DR1.rd;
                 cpu->DR1.pd = free;
@@ -409,6 +448,7 @@ APEX_DR1(APEX_CPU *cpu)
         {
             setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, -1, cpu);
             int free = getFreeRegFromPR(cpu);
+            cpu->DR1.prev_phy_reg = cpu->rt.reg[cpu->DR1.rd];
             cpu->DR1.pd = free;
             break;
             /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed*/
@@ -504,7 +544,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            dest = cpu->DR2.rd;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -1108,6 +1148,7 @@ APEX_MUL1_FU(APEX_CPU *cpu)
         {
             cpu->MUL1_FU.result_buffer = cpu->MUL1_FU.rs1_value * cpu->MUL1_FU.rs2_value;
         }
+        printf("REG Invalid = %d",cpu->pr.PR_File[cpu->MUL1_FU.pd].reg_invalid);
         cpu->MUL2_FU = cpu->MUL1_FU;
         cpu->MUL1_FU.has_insn = FALSE;
     }
@@ -1123,8 +1164,10 @@ APEX_MUL2_FU(APEX_CPU *cpu)
         {
             cpu->MUL2_FU.result_buffer = cpu->MUL2_FU.rs1_value * cpu->MUL2_FU.rs2_value;
         }
+        printf("SENDING TO MUL 3");
         cpu->MUL3_FU = cpu->MUL2_FU;
         cpu->MUL2_FU.has_insn = FALSE;
+        cpu->MUL3_FU.has_insn = TRUE;
     }
 }
 
@@ -1153,10 +1196,10 @@ APEX_MUL3_FU(APEX_CPU *cpu)
             cpu->fBus[1].tag = cpu->MUL3_FU.pd;
             cpu->fBus[1].busy = 1;
         }
+        cpu->MUL4_FU = cpu->MUL3_FU;
+        cpu->MUL3_FU.has_insn = FALSE;
     }
     // implement forwarding for tag
-    cpu->MUL4_FU = cpu->MUL3_FU;
-    cpu->MUL3_FU.has_insn = FALSE;
 }
 
 static void
@@ -1210,7 +1253,7 @@ int do_commit(APEX_CPU *cpu)
     switch (entry->instruction_type)
     {
     case R2R:
-    {
+    {   
         int isInvalid = cpu->pr.PR_File[entry->dest_phy_reg].reg_invalid;
         if (isInvalid)
         {
@@ -1266,6 +1309,7 @@ int do_commit(APEX_CPU *cpu)
 void APEX_D_cache(APEX_CPU *cpu)
 {
     int head = cpu->lsq.head;
+    int tail = cpu->lsq.tail;
     LSQ_Entry *entry = cpu->lsq.entry[head];
     if (!entry->mem_valid_bit)
     {
@@ -1280,6 +1324,12 @@ void APEX_D_cache(APEX_CPU *cpu)
     else
     {
         cpu->data_memory[entry->mem_address] = entry->src_value;
+    }
+    if (head == tail)
+    {
+        cpu->lsq.head = -1;
+        cpu->lsq.tail = -1;
+        return;
     }
     cpu->lsq.head = (head + 1) % LSQ_SIZE;
 }
@@ -1380,6 +1430,7 @@ intialize_PR_RT(APEX_CPU *cpu)
     {
         cpu->rt.reg[cpu->pr.head] = cpu->pr.head;
         cpu->pr.PR_File[cpu->pr.head].cc_flag = -1;
+        cpu->pr.PR_File[cpu->pr.head].free = cpu->pr.head;
         cpu->pr.head++;
     }
     int head = cpu->pr.head;
@@ -1912,7 +1963,7 @@ void APEX_cpu_run(APEX_CPU *cpu)
         {
             user_prompt_val = 'r';
             printf("Press any key to advance CPU Clock or <q> to quit:\n");
-            // scanf("%c", &user_prompt_val);
+            scanf("%c", &user_prompt_val);
 
             if ((user_prompt_val == 'Q') || (user_prompt_val == 'q'))
             {
