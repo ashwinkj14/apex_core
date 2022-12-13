@@ -204,8 +204,7 @@ typedef struct APEX_CPU
     CPU_Stage MUL2_FU;
     CPU_Stage MUL3_FU;
     CPU_Stage MUL4_FU;
-    CPU_Stage memory;
-    CPU_Stage writeback;
+    CPU_Stage commit;
     RT rt;
     PR pr;
     FB fBus[2];

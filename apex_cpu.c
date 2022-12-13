@@ -147,6 +147,12 @@ print_instruction(const CPU_Stage *stage)
         printf("%s", stage->opcode_str);
         break;
     }
+
+    case OPCODE_NOP:
+    {
+        printf("%s", stage->opcode_str);
+        break;
+    }
     }
 }
 
@@ -191,7 +197,7 @@ static void print_instruction_PR(const CPU_Stage *stage)
     case OPCODE_BZ:
     case OPCODE_BNZ:
     {
-        printf("P%d,P%d ", stage->pd, stage->imm);
+        printf("P%d ", stage->branch_reg);
         break;
     }
 
@@ -200,8 +206,24 @@ static void print_instruction_PR(const CPU_Stage *stage)
         printf("%s", stage->opcode_str);
         break;
     }
+    case OPCODE_NOP:
+    {
+        printf("%s", stage->opcode_str);
+        break;
     }
 }
+
+/* Debug function which prints the CPU stage as EMPTY
+ *
+ * Note: You can edit this function to print in more detail
+ */
+static void
+print_stage_empty_state(const char *name, const CPU_Stage *stage)
+{
+    printf("%-15s: %s ", name, "EMPTY");
+    printf("\n");
+}
+
 /* Debug function which prints the CPU stage content
  *
  * Note: You can edit this function to print in more detail
@@ -241,12 +263,11 @@ print_reg_file(const APEX_CPU *cpu)
     printf("\n");
 }
 
-
 void print_rename_table(APEX_CPU *cpu)
 {
     int i;
 
-    printf("----------\n%s\n----------\n", "Rename Table:");
+    printf("--------------------\n%s\n--------------------\n", "Rename Table:");
 
     for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
@@ -260,7 +281,7 @@ void print_physical_reg_file(APEX_CPU *cpu)
 {
     int i;
 
-    printf("----------\n%s\n----------\n", "Physical Register File:");
+    printf("--------------------\n%s\n--------------------\n", "Physical Register File:");
 
     for (int i = 0; i < PR_FILE_SIZE/2; ++i)
     {
@@ -274,6 +295,33 @@ void print_physical_reg_file(APEX_CPU *cpu)
         printf("P%-3d[%-3d] ", i, cpu->pr.PR_File[i].phy_Reg);
     }
 
+    printf("\n");
+}
+
+void print_fwd_bus(APEX_CPU *cpu)
+{
+    int tag = 0;
+    int value = 0;
+    printf("\n----------------\n%s\n----------------\n", "Fowarding bus 0 :");
+    if(cpu->fBus[0].busy)
+    {
+        tag = cpu->fBus[0].tag;
+        value = cpu->fBus[0].data;
+    }
+    printf("Tag = %d\n",tag);
+    printf("Value = %d",value);
+    printf("\n");
+
+    tag = 0;
+    value = 0;
+    printf("\n----------------\n%s\n---------------\n", "Fowarding bus 1 :");
+    if(cpu->fBus[1].busy)
+    {
+        tag = cpu->fBus[1].tag;
+        value = cpu->fBus[1].data;
+    }
+    printf("Tag = %d\n",tag);
+    printf("Value = %d\n",value);
     printf("\n");
 }
 
@@ -296,6 +344,7 @@ APEX_fetch(APEX_CPU *cpu)
         }
         cpu->DR1 = cpu->fetch;
         cpu->DR1.has_insn = FALSE;
+        return;
     }
     if (cpu->fetch.has_insn)
     {
@@ -338,6 +387,11 @@ APEX_fetch(APEX_CPU *cpu)
         if (cpu->fetch.opcode == OPCODE_HALT)
         {
             cpu->fetch.has_insn = FALSE;
+        }
+    }else{
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("Fetch", &cpu->fetch);
         }
     }
 }
@@ -549,6 +603,12 @@ APEX_DR1(APEX_CPU *cpu)
         cpu->DR2 = cpu->DR1;
         cpu->DR1.has_insn = FALSE;
         /*If the IQ is full stall the fetch and DR2 stage}*/
+    }else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("DR1", &cpu->DR1);
+        }
     }
 }
 
@@ -760,6 +820,12 @@ APEX_DR2(APEX_CPU *cpu)
         print_stage_content("DR2", &cpu->DR2);
         cpu->I_Queue = cpu->DR2;
         cpu->DR2.has_insn = FALSE;
+    }else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("DR2", &cpu->DR2);
+        }
     }
 }
 
@@ -801,7 +867,8 @@ static void APEX_IQ(APEX_CPU *cpu)
         {
         case INT_U:
         {
-            if (cpu->INT_FU.has_insn)
+            
+            if (cpu->INT_FU.has_insn || (cpu->fBus[0].busy && cpu->fBus[1].busy))
             {
                 index++;
                 continue;
@@ -813,6 +880,16 @@ static void APEX_IQ(APEX_CPU *cpu)
             cpu->I_Queue.pd = cpu->iq.entry[index]->dest;
             cpu->I_Queue.waitingForBranch = cpu->iq.entry[index]->waitingForBranch;
             cpu->INT_FU = cpu->I_Queue;
+            if (!cpu->fBus[0].busy)
+            {
+                cpu->fBus[0].tag = cpu->I_Queue.pd;
+                cpu->fBus[0].busy = 1;
+            }
+            else if (!cpu->fBus[1].busy) // check for forw
+            {
+                cpu->fBus[1].tag = cpu->I_Queue.pd;
+                cpu->fBus[1].busy = 1;
+            }
             break;
         }
 
@@ -857,6 +934,8 @@ static void APEX_IQ(APEX_CPU *cpu)
     }
     shiftIQElements(cpu, index);
 }
+
+
 
 static void
 APEX_INT_FU(APEX_CPU *cpu)
@@ -1150,6 +1229,13 @@ APEX_INT_FU(APEX_CPU *cpu)
         }
         cpu->INT_FU.has_insn = FALSE;
     }
+    else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("INT_FU", &cpu->INT_FU);
+        }
+    }
 }
 
 static void
@@ -1223,6 +1309,13 @@ APEX_LOP_FU(APEX_CPU *cpu)
         }
         cpu->pr.PR_File[cpu->LOP_FU.pd].reg_invalid = 0;
     }
+    else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("Logical_FU", &cpu->LOP_FU);
+        }
+    }
 }
 
 static void
@@ -1237,6 +1330,13 @@ APEX_MUL1_FU(APEX_CPU *cpu)
         }
         cpu->MUL2_FU = cpu->MUL1_FU;
         cpu->MUL1_FU.has_insn = FALSE;
+    }
+    else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("MUL1_FU", &cpu->MUL1_FU);
+        }
     }
 }
 
@@ -1253,6 +1353,12 @@ APEX_MUL2_FU(APEX_CPU *cpu)
         cpu->MUL3_FU = cpu->MUL2_FU;
         cpu->MUL2_FU.has_insn = FALSE;
         cpu->MUL3_FU.has_insn = TRUE;
+    }else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("MUL2_FU", &cpu->MUL2_FU);
+        }
     }
 }
 
@@ -1283,6 +1389,13 @@ APEX_MUL3_FU(APEX_CPU *cpu)
         }
         cpu->MUL4_FU = cpu->MUL3_FU;
         cpu->MUL3_FU.has_insn = FALSE;
+    }
+    else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("MUL3_FU", &cpu->MUL3_FU);
+        }
     }
     // implement forwarding for tag
 }
@@ -1327,6 +1440,13 @@ APEX_MUL4_FU(APEX_CPU *cpu)
         cpu->pr.PR_File[cpu->MUL4_FU.pd].reg_invalid = 0;
         cpu->MUL4_FU.has_insn = FALSE;
     }
+    else
+    {
+        if (ENABLE_DEBUG_MESSAGES)
+        {
+            print_stage_empty_state("MUL4_FU", &cpu->MUL4_FU);
+        }
+    }
 }
 
 int do_commit(APEX_CPU *cpu)
@@ -1334,6 +1454,7 @@ int do_commit(APEX_CPU *cpu)
     ROB_Entry *entry = getROBHead(cpu);
     if (entry == NULL)
     {
+        print_stage_empty_state("Commitment",&cpu->commit);
         return 0;
     }
     switch (entry->instruction_type)
@@ -1343,6 +1464,7 @@ int do_commit(APEX_CPU *cpu)
         int isInvalid = cpu->pr.PR_File[entry->dest_phy_reg].reg_invalid;
         if (isInvalid)
         {
+            print_stage_empty_state("Commitment",&cpu->commit);
             return 0;
         }
         cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
@@ -1357,6 +1479,7 @@ int do_commit(APEX_CPU *cpu)
             APEX_D_cache(cpu);
             if (entry->lsq_index == cpu->lsq.head)
             {
+                print_stage_empty_state("Commitment",&cpu->commit);
                 return 0;
             }
             cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
@@ -1372,6 +1495,7 @@ int do_commit(APEX_CPU *cpu)
             APEX_D_cache(cpu);
             if (entry->lsq_index == cpu->lsq.head)
             {
+                print_stage_empty_state("Commitment",&cpu->commit);
                 return 0;
             }
         }
@@ -1384,11 +1508,20 @@ int do_commit(APEX_CPU *cpu)
         break;
     }
     }
+    APEX_Instruction *instr = &cpu->code_memory[get_code_memory_index_from_pc(entry->pc_value)];
+    strcpy(cpu->commit.opcode, instr->opcode_str);
+    cpu->commit.rd = instr->rd;
+    cpu->commit.rs1 = instr->rs1;
+    cpu->commit.rs2 = instr->rs2;
+    cpu->commit.rs3 = instr->rs3;
+    cpu->commit.imm = instr->imm;
+    print_stage_content("Commitment",&cpu->commit);
     removeROBHead(cpu);
     if (entry->instruction_type == HALT)
     {
         return 1;
     }
+    print_stage_empty_state("Commitment",&cpu->commit);
     return 0;
 }
 
@@ -1420,93 +1553,6 @@ void APEX_D_cache(APEX_CPU *cpu)
     cpu->lsq.head = (head + 1) % LSQ_SIZE;
 }
 
-/*
- * Memory Stage of APEX Pipeline
- *
- * Note: You are free to edit this function according to your implementation
- */
-static void
-APEX_memory(APEX_CPU *cpu)
-{
-    if (cpu->memory.has_insn)
-    {
-        switch (cpu->memory.opcode)
-        {
-        case OPCODE_ADD:
-        {
-            /* No work for ADD */
-            break;
-        }
-
-        case OPCODE_LOAD:
-        {
-            /* Read from data memory */
-            cpu->memory.result_buffer = cpu->data_memory[cpu->memory.memory_address];
-            break;
-        }
-        }
-
-        /* Copy data from memory latch to writeback latch*/
-        cpu->writeback = cpu->memory;
-        cpu->memory.has_insn = FALSE;
-
-        if (ENABLE_DEBUG_MESSAGES)
-        {
-            print_stage_content("Memory", &cpu->memory);
-        }
-    }
-}
-
-/*
- * Writeback Stage of APEX Pipeline
- *
- * Note: You are free to edit this function according to your implementation
- */
-static int
-APEX_writeback(APEX_CPU *cpu)
-{
-    if (cpu->writeback.has_insn)
-    {
-        /* Write result to register file based on instruction type */
-        switch (cpu->writeback.opcode)
-        {
-        case OPCODE_ADD:
-        {
-            cpu->regs[cpu->writeback.rd] = cpu->writeback.result_buffer;
-            break;
-        }
-
-        case OPCODE_LOAD:
-        {
-            cpu->regs[cpu->writeback.rd] = cpu->writeback.result_buffer;
-            break;
-        }
-
-        case OPCODE_MOVC:
-        {
-            cpu->regs[cpu->writeback.rd] = cpu->writeback.result_buffer;
-            break;
-        }
-        }
-
-        cpu->insn_completed++;
-        cpu->writeback.has_insn = FALSE;
-
-        if (ENABLE_DEBUG_MESSAGES)
-        {
-            print_stage_content("Writeback", &cpu->writeback);
-        }
-
-        if (cpu->writeback.opcode == OPCODE_HALT)
-        {
-            /* Stop the APEX simulator */
-            return TRUE;
-        }
-    }
-
-    /* Default */
-    return 0;
-}
 /*Intialise PR and RT with default setup*/
 static void
 intialize_PR_RT(APEX_CPU *cpu)
@@ -1981,14 +2027,15 @@ int isBTBFull(APEX_CPU *cpu)
    while(i<BTB_SIZE)
    {
     BTB_Entry *entry = cpu->btb.entry[i];
+    if(entry ==NULL)
+    {
+        return i;
+    }
     if(entry->prediction == 0)
     {
         return i;
     }
-    if(entry ==NULL)
-    {
-        return -1;
-    }
+    
     i++;
    }
    return -2;
@@ -2022,18 +2069,13 @@ void addBTBEntry(int pc_value, int target_address, APEX_CPU *cpu)
     {
         BTBReplacement(cpu,entry);
     }
-    else if(btbInd != -1)
+    else 
     {
         int tail = btbInd;
         cpu->btb.entry[tail] = entry;
         cpu->btb.tail = tail;
     }
-    else{
-    int tail = cpu->btb.tail;
-    tail = (tail + 1) % BTB_SIZE;
-    cpu->btb.entry[tail] = entry;
-    cpu->btb.tail = tail;
-    }
+    
 }
 
 void updateBTBEntry(int pc_value, int prediction, APEX_CPU *cpu)
@@ -2226,6 +2268,7 @@ void APEX_cpu_run(APEX_CPU *cpu)
         print_reg_file(cpu);
         print_rename_table(cpu);
         print_physical_reg_file(cpu);
+        print_fwd_bus(cpu);
 
         cpu->fBus[0].busy = 0;
         cpu->fBus[1].busy = 0;
