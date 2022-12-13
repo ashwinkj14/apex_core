@@ -189,6 +189,7 @@ typedef struct APEX_CPU
     int propogate_NOP;
     int conditional_pc;
     int cmp_flag;
+    int new_bis;
     
 
     /* Pipeline stages */

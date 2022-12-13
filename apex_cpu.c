@@ -716,7 +716,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = 1;
             src2_valid = 1;
             instruction_type = SKIP;
-            addBISEntry(cpu, cpu->DR2.pc, rob_index);
+            cpu->new_bis = 1;
             if (cpu->pr.PR_File[cpu->DR2.branch_reg].reg_invalid == 0)
             {
                 if (cpu->pr.PR_File[cpu->DR2.branch_reg].cc_flag == 1 ^ cpu->DR2.opcode == OPCODE_BZ)
@@ -736,6 +736,11 @@ APEX_DR2(APEX_CPU *cpu)
         {
             break;
         }
+        }
+        if(cpu->new_bis)
+        {
+            addBISEntry(cpu, cpu->DR2.pc, rob_index);
+            cpu->new_bis = 0;
         }
         addROBEntry(1, instruction_type, cpu->DR2.pc, dest, cpu->DR2.prev_phy_reg, cpu->DR2.dest_arch_reg, lsq_index, 0, cpu);
         addIQEntry(1, fu_type, cpu->DR2.imm, src1_valid, src1_tag, src1_value, src2_valid, src2_tag, src2_value, dest, cpu->DR2.waitingForBranch, cpu->bis.tail, cpu);
@@ -1026,7 +1031,8 @@ APEX_INT_FU(APEX_CPU *cpu)
         {
             cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
             if(cpu->I_Queue.waitingForBranch)
-        {
+            {
+                flush_instructions(cpu, cpu->INT_FU.pc);
                 cpu->waitingForBranch = 0;
                 cpu->pc = cpu->conditional_pc;
                 addBTBEntry(cpu->INT_FU.pc, cpu->conditional_pc, cpu);
@@ -2098,6 +2104,11 @@ int getBIS_index(APEX_CPU *cpu, int pc_value)
 /*----------------------------------Branch Instruction stack utilities end-----------------------------------*/
 
 /*----------------------------------FLUSH instruction utilities start-----------------------------------*/
+
+void flush_instructions(APEX_CPU *cpu, int pc_value)
+{
+    flush_bisEntries(cpu,pc_value);
+}
 
 void flush_bisEntries(APEX_CPU *cpu, int pc_value)
 {
