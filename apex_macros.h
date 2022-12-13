@@ -18,6 +18,12 @@
 /* Size of integer register file */
 #define REG_FILE_SIZE 16
 
+#define PR_FILE_SIZE 15
+
+#define INT_U 1
+#define LOP_U 2
+#define MUL_U 3
+
 #define IQ_SIZE 8
 #define LSQ_SIZE 4
 #define ROB_SIZE 12

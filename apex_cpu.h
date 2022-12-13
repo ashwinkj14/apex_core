@@ -43,7 +43,7 @@ typedef struct Physical_Reg_format
 
 typedef struct Physical_Reg
 {
-    PRF PR_File[15];
+    PRF PR_File[PR_FILE_SIZE];
     int head;
     int tail;
 }PR;
@@ -289,8 +289,16 @@ void BTBReplacement(APEX_CPU *cpu, BTB_Entry *entry);
 int isBTBFull(APEX_CPU *cpu);
 
 //BIS
-void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index);
 int isBISFull(APEX_CPU *cpu);
+void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index);
+void updateBTBEntry(int pc_value, int prediction, APEX_CPU *cpu);
+
+//FLUSH
+void flush_bisEntries(APEX_CPU *cpu, int pc_value);
+void flush_iqEntries(APEX_CPU *cpu, int bis_index);
+void flush_lsqEntries(APEX_CPU *cpu, int lsq_index);
+void flush_robEntries(APEX_CPU *cpu, int rob_index);
+
 
 APEX_Instruction *create_code_memory(const char *filename, int *size);
 APEX_CPU *APEX_cpu_init(const char *filename);
