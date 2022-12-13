@@ -233,16 +233,45 @@ print_reg_file(const APEX_CPU *cpu)
 
     printf("----------\n%s\n----------\n", "Registers:");
 
-    for (int i = 0; i < REG_FILE_SIZE / 2; ++i)
+    for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
         printf("R%-3d[%-3d] ", i, cpu->regs[i]);
     }
 
     printf("\n");
+}
 
-    for (i = (REG_FILE_SIZE / 2); i < REG_FILE_SIZE; ++i)
+
+void print_rename_table(APEX_CPU *cpu)
+{
+    int i;
+
+    printf("----------\n%s\n----------\n", "Rename Table:");
+
+    for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
-        printf("R%-3d[%-3d] ", i, cpu->regs[i]);
+        printf("R%-3d[%-3d] ", i, cpu->rt.reg[i]);
+    }
+
+    printf("\n");
+}
+
+void print_physical_reg_file(APEX_CPU *cpu)
+{
+    int i;
+
+    printf("----------\n%s\n----------\n", "Physical Register File:");
+
+    for (int i = 0; i < PR_FILE_SIZE/2; ++i)
+    {
+        printf("P%-3d[%-3d] ", i, cpu->pr.PR_File[i].phy_Reg);
+    }
+
+    printf("\n");
+
+    for (int i = PR_FILE_SIZE/2; i < PR_FILE_SIZE; ++i)
+    {
+        printf("P%-3d[%-3d] ", i, cpu->pr.PR_File[i].phy_Reg);
     }
 
     printf("\n");
@@ -556,26 +585,22 @@ APEX_DR2(APEX_CPU *cpu)
         case OPCODE_CMP:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
-            src2_tag = cpu->pr.PR_File[cpu->DR2.ps2].free;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = cpu->pr.PR_File[cpu->DR2.pd].free;
+            dest = cpu->DR2.pd;
             break;
         }
 
         case OPCODE_MUL:
         {
             fu_type = MUL_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
-            src2_tag = cpu->pr.PR_File[cpu->DR2.ps2].free;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = cpu->pr.PR_File[cpu->DR2.pd].free;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -583,11 +608,10 @@ APEX_DR2(APEX_CPU *cpu)
         case OPCODE_SUBL:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            dest = cpu->pr.PR_File[cpu->DR2.pd].free;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -596,13 +620,11 @@ APEX_DR2(APEX_CPU *cpu)
         case OPCODE_AND:
         {
             fu_type = LOP_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
-            src2_tag = cpu->pr.PR_File[cpu->DR2.ps2].free;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            dest = cpu->pr.PR_File[cpu->DR2.pd].free;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -611,7 +633,7 @@ APEX_DR2(APEX_CPU *cpu)
             fu_type = INT_U;
             src1_valid = 1;
             src2_valid = 1;
-            dest = cpu->pr.PR_File[cpu->DR2.pd].free;
+            dest = cpu->DR2.pd;
             break;
         }
 
@@ -636,10 +658,8 @@ APEX_DR2(APEX_CPU *cpu)
         case OPCODE_LDR:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
-            src2_tag = cpu->pr.PR_File[cpu->DR2.ps2].free;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
             dest = lsq_index;
@@ -652,7 +672,6 @@ APEX_DR2(APEX_CPU *cpu)
         case OPCODE_LOAD:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
@@ -666,42 +685,36 @@ APEX_DR2(APEX_CPU *cpu)
         case OPCODE_STORE:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
-            src2_tag = cpu->pr.PR_File[cpu->DR2.ps2].free;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
             dest = lsq_index;
             instruction_type = STORE;
 
-            addLSQEntry(1, 0, 0, 0, dest, src1_valid, cpu->DR2.ps1, src1_value, rob_index, cpu);
+            addLSQEntry(1, 0, 0, 0, dest, src1_valid, src1_tag, src1_value, rob_index, cpu);
             break;
         }
 
         case OPCODE_STR:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
-            src2_tag = cpu->pr.PR_File[cpu->DR2.ps2].free;
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
-            int src3_tag = cpu->pr.PR_File[cpu->DR2.ps3].free;
             int src3_valid = !cpu->pr.PR_File[cpu->DR2.ps3].reg_invalid;
             int src3_value = cpu->pr.PR_File[cpu->DR2.ps3].phy_Reg;
             dest = lsq_index;
             instruction_type = STORE;
 
-            addLSQEntry(1, 0, 0, 0, dest, src3_valid, src3_tag, src3_value, rob_index, cpu);
+            addLSQEntry(1, 0, 0, 0, dest, src3_valid, cpu->DR2.ps3, src3_value, rob_index, cpu);
             break;
         }
 
         case OPCODE_JUMP:
         {
             fu_type = INT_U;
-            src1_tag = cpu->pr.PR_File[cpu->DR2.ps1].free;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
@@ -743,7 +756,7 @@ APEX_DR2(APEX_CPU *cpu)
             cpu->new_bis = 0;
         }
         addROBEntry(1, instruction_type, cpu->DR2.pc, dest, cpu->DR2.prev_phy_reg, cpu->DR2.dest_arch_reg, lsq_index, 0, cpu);
-        addIQEntry(1, fu_type, cpu->DR2.imm, src1_valid, src1_tag, src1_value, src2_valid, src2_tag, src2_value, dest, cpu->DR2.waitingForBranch, cpu->bis.tail, cpu);
+        addIQEntry(1, fu_type, cpu->DR2.imm, src1_valid, cpu->DR2.ps1, src1_value, src2_valid, cpu->DR2.ps2, src2_value, dest, cpu->DR2.waitingForBranch, cpu->bis.tail, cpu);
         print_stage_content("DR2", &cpu->DR2);
         cpu->I_Queue = cpu->DR2;
         cpu->DR2.has_insn = FALSE;
@@ -873,7 +886,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[0].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -881,7 +894,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -904,7 +917,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[0].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -912,7 +925,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -935,7 +948,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[0].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -943,7 +956,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -965,7 +978,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[0].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -973,7 +986,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -996,7 +1009,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[0].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[0].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -1004,7 +1017,7 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->fBus[1].cc = cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag;
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[1].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             }
@@ -1081,13 +1094,13 @@ APEX_INT_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->INT_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->INT_FU.pd].free;
+                cpu->fBus[0].tag = cpu->INT_FU.pd;
                 cpu->fBus[1].busy = 1;
             }
             cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
@@ -1159,13 +1172,13 @@ APEX_LOP_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->LOP_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->LOP_FU.pd].free;
+                cpu->fBus[0].tag = cpu->LOP_FU.pd;
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->LOP_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->LOP_FU.pd].free;
+                cpu->fBus[1].tag = cpu->LOP_FU.pd;
                 cpu->fBus[1].busy = 1;
             }
 
@@ -1178,13 +1191,13 @@ APEX_LOP_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->LOP_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->LOP_FU.pd].free;
+                cpu->fBus[0].tag = cpu->LOP_FU.pd;
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->LOP_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->LOP_FU.pd].free;
+                cpu->fBus[1].tag = cpu->LOP_FU.pd;
                 cpu->fBus[1].busy = 1;
             }
             break;
@@ -1196,13 +1209,13 @@ APEX_LOP_FU(APEX_CPU *cpu)
             if (!cpu->fBus[0].busy)
             {
                 cpu->fBus[0].data = cpu->LOP_FU.result_buffer;
-                cpu->fBus[0].tag = cpu->pr.PR_File[cpu->LOP_FU.pd].free;
+                cpu->fBus[0].tag = cpu->LOP_FU.pd;
                 cpu->fBus[0].busy = 1;
             }
             else if (!cpu->fBus[1].busy) // check for forw
             {
                 cpu->fBus[1].data = cpu->LOP_FU.result_buffer;
-                cpu->fBus[1].tag = cpu->pr.PR_File[cpu->LOP_FU.pd].free;
+                cpu->fBus[1].tag = cpu->LOP_FU.pd;
                 cpu->fBus[1].busy = 1;
             }
             break;
@@ -1260,12 +1273,12 @@ APEX_MUL3_FU(APEX_CPU *cpu)
 
         if (!cpu->fBus[0].busy)
         {
-            cpu->fBus[0].tag = cpu->pr.PR_File[cpu->MUL3_FU.pd].free;
+            cpu->fBus[0].tag = cpu->MUL3_FU.pd;
             cpu->fBus[0].busy = 1;
         }
         else if (!cpu->fBus[1].busy) // check for forw
         {
-            cpu->fBus[1].tag = cpu->pr.PR_File[cpu->MUL3_FU.pd].free;
+            cpu->fBus[1].tag = cpu->MUL3_FU.pd;
             cpu->fBus[1].busy = 1;
         }
         cpu->MUL4_FU = cpu->MUL3_FU;
@@ -1287,27 +1300,28 @@ APEX_MUL4_FU(APEX_CPU *cpu)
         if (cpu->MUL4_FU.opcode == OPCODE_MUL)
         {
             cpu->MUL4_FU.result_buffer = cpu->MUL4_FU.rs1_value * cpu->MUL4_FU.rs2_value;
+            cpu->pr.PR_File[cpu->MUL4_FU.pd].phy_Reg = cpu->MUL4_FU.result_buffer;
         }
-        if (cpu->MUL3_FU.result_buffer == 0)
+        if (cpu->MUL4_FU.result_buffer == 0)
         {
-            cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag = 1;
+            cpu->pr.PR_File[cpu->MUL4_FU.pd].cc_flag = 1;
         }
         else
         {
-            cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag = 0;
+            cpu->pr.PR_File[cpu->MUL4_FU.pd].cc_flag = 0;
         }
         if (!cpu->fBus[0].busy)
         {
-            cpu->fBus[0].cc = cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag;
-            cpu->fBus[0].data = cpu->MUL3_FU.result_buffer;
-            cpu->fBus[0].tag = cpu->pr.PR_File[cpu->MUL3_FU.pd].free;
+            cpu->fBus[0].cc = cpu->pr.PR_File[cpu->MUL4_FU.pd].cc_flag;
+            cpu->fBus[0].data = cpu->MUL4_FU.result_buffer;
+            cpu->fBus[0].tag = cpu->MUL4_FU.pd;
             cpu->fBus[0].busy = 1;
         }
         else if (!cpu->fBus[1].busy) // check for forw
         {
-            cpu->fBus[1].cc = cpu->pr.PR_File[cpu->MUL3_FU.pd].cc_flag;
-            cpu->fBus[1].data = cpu->MUL3_FU.result_buffer;
-            cpu->fBus[1].tag = cpu->pr.PR_File[cpu->MUL3_FU.pd].free;
+            cpu->fBus[1].cc = cpu->pr.PR_File[cpu->MUL4_FU.pd].cc_flag;
+            cpu->fBus[1].data = cpu->MUL4_FU.result_buffer;
+            cpu->fBus[1].tag = cpu->MUL4_FU.pd;
             cpu->fBus[1].busy = 1;
         }
         cpu->pr.PR_File[cpu->MUL4_FU.pd].reg_invalid = 0;
@@ -1850,7 +1864,6 @@ void updateLSQEntry(APEX_CPU *cpu, int src_tag, int src_value)
                 {
                     entry->src_valid_bit = 1;
                     entry->src_value = src_value;
-                    // printf("SRC TAG = %d, SRC VALUE = %d",src_tag, src_value);
                     return;
                 }
             }
@@ -2211,6 +2224,8 @@ void APEX_cpu_run(APEX_CPU *cpu)
         APEX_fetch(cpu);
 
         print_reg_file(cpu);
+        print_rename_table(cpu);
+        print_physical_reg_file(cpu);
 
         cpu->fBus[0].busy = 0;
         cpu->fBus[1].busy = 0;

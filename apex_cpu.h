@@ -51,7 +51,7 @@ typedef struct Physical_Reg
 /* Format of Rename Table*/
 typedef struct Rename_Table
 {
-    int reg[8];
+    int reg[REG_FILE_SIZE];
 }RT;
 
 typedef struct IQ_Entry
@@ -295,6 +295,7 @@ void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index);
 void updateBTBEntry(int pc_value, int prediction, APEX_CPU *cpu);
 
 //FLUSH
+void flush_instructions(APEX_CPU *cpu, int pc_value);
 void flush_bisEntries(APEX_CPU *cpu, int pc_value);
 void flush_iqEntries(APEX_CPU *cpu, int bis_index);
 void flush_lsqEntries(APEX_CPU *cpu, int lsq_index);
