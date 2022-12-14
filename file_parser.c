@@ -197,6 +197,7 @@ create_APEX_instruction(APEX_Instruction *ins, char *buffer)
         case OPCODE_OR:
         case OPCODE_XOR:
         case OPCODE_LDR:
+        case OPCODE_CMP:
         {
             ins->rd = get_num_from_string(tokens[0]);
             ins->rs1 = get_num_from_string(tokens[1]);
@@ -245,13 +246,13 @@ create_APEX_instruction(APEX_Instruction *ins, char *buffer)
         {
             ins->rs1 = get_num_from_string(tokens[0]);
             ins->imm = get_num_from_string(tokens[1]);
-        }
-        case OPCODE_CMP:
-        {
-            ins->rs1 = get_num_from_string(tokens[0]);
-            ins->rs2 = get_num_from_string(tokens[1]);
+            break;
         }
         
+        default:
+        {
+            break;
+        }
         
     }
     /* Fill in rest of the instructions accordingly */

@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-// #include "file_parser.c"
+//#include "file_parser.c"
 #include "apex_cpu.h"
 #include "apex_macros.h"
 
@@ -78,6 +78,9 @@ static int getFreeRegFromPR(APEX_CPU *cpu)
     }
 
     int free = cpu->pr.PR_File[index].free;
+    if(free>12){
+        printf("Taking P%d @ index = %d",free, index);
+    }
     cpu->pr.PR_File[free].reg_invalid = 1;
     return free;
 }
@@ -109,6 +112,8 @@ print_instruction(const CPU_Stage *stage)
     case OPCODE_AND:
     case OPCODE_OR:
     case OPCODE_XOR:
+    case OPCODE_CMP:
+    case OPCODE_LDR:
     {
         printf("%s,R%d,R%d,R%d ", stage->opcode_str, stage->rd, stage->rs1,
                stage->rs2);
@@ -121,7 +126,15 @@ print_instruction(const CPU_Stage *stage)
         break;
     }
 
+    case OPCODE_JUMP:
+    {
+        printf("%s,R%d,#%d ", stage->opcode_str, stage->rs1, stage->imm);
+        break;
+    }
+
     case OPCODE_LOAD:
+    case OPCODE_ADDL:
+    case OPCODE_SUBL:
     {
         printf("%s,R%d,R%d,#%d ", stage->opcode_str, stage->rd, stage->rs1,
                stage->imm);
@@ -132,6 +145,13 @@ print_instruction(const CPU_Stage *stage)
     {
         printf("%s,R%d,R%d,#%d ", stage->opcode_str, stage->rs1, stage->rs2,
                stage->imm);
+        break;
+    }
+
+    case OPCODE_STR:
+    {
+        printf("%s,R%d,R%d,#%d ", stage->opcode_str, stage->rs1, stage->rs2,
+               stage->rs3);
         break;
     }
 
@@ -167,6 +187,7 @@ static void print_instruction_PR(const CPU_Stage *stage)
     case OPCODE_AND:
     case OPCODE_OR:
     case OPCODE_XOR:
+    case OPCODE_CMP:
     {
 
         printf("P%d,P%d,P%d ", stage->pd, stage->ps1, stage->ps2);
@@ -181,6 +202,8 @@ static void print_instruction_PR(const CPU_Stage *stage)
     }
 
     case OPCODE_LOAD:
+    case OPCODE_ADDL:
+    case OPCODE_SUBL:
     {
 
         printf("P%d,P%d ", stage->pd, stage->ps1);
@@ -211,6 +234,7 @@ static void print_instruction_PR(const CPU_Stage *stage)
         printf("%s", stage->opcode_str);
         break;
     }
+}
 }
 
 /* Debug function which prints the CPU stage as EMPTY
@@ -257,7 +281,7 @@ print_reg_file(const APEX_CPU *cpu)
 
     for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
-        printf("R%-3d[%-3d] ", i, cpu->regs[i]);
+        printf("R%-2d[%-3d] ", i, cpu->regs[i]);
     }
 
     printf("\n");
@@ -271,7 +295,7 @@ void print_rename_table(APEX_CPU *cpu)
 
     for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
-        printf("R%-3d[%-3d] ", i, cpu->rt.reg[i]);
+        printf("R%-2d[%-3d] ", i, cpu->rt.reg[i]);
     }
 
     printf("\n");
@@ -352,7 +376,10 @@ APEX_fetch(APEX_CPU *cpu)
         if (cpu->fetch_from_next_cycle == TRUE)
         {
             cpu->fetch_from_next_cycle = FALSE;
-
+            if (ENABLE_DEBUG_MESSAGES)
+            {
+                print_stage_empty_state("Fetch", &cpu->fetch);
+            }
             /* Skip this cycle*/
             return;
         }
@@ -373,8 +400,27 @@ APEX_fetch(APEX_CPU *cpu)
         cpu->fetch.imm = current_ins->imm;
 
         /* Update PC for next instruction */
-        cpu->pc += 4;
-
+        int i  = 0;
+        int flag = 1;
+        while(i<BTB_SIZE)
+        {
+            BTB_Entry *entry = cpu->btb.entry[i];
+            if(entry == NULL){
+                i++;
+                continue;
+            }
+            if(entry->pc_value == cpu->pc)
+            {
+                cpu->pc = entry->target_address;
+                flag = 0;
+                break;
+            }
+            i++;
+        }
+        if(flag)
+        {
+            cpu->pc += 4;
+        }
         /* Copy data from fetch latch to decode latch*/
         cpu->DR1 = cpu->fetch;
 
@@ -582,7 +628,7 @@ APEX_DR1(APEX_CPU *cpu)
                         cpu->pc = cpu->DR1.pc + 4;
                 }
             }
-        }
+            }
             if(cpu->DR1.imm < 0)
             {
                 cpu->DR1.branch_prediction = 1;
@@ -885,7 +931,7 @@ static void APEX_IQ(APEX_CPU *cpu)
                 cpu->fBus[0].tag = cpu->I_Queue.pd;
                 cpu->fBus[0].busy = 1;
             }
-            else if (!cpu->fBus[1].busy) // check for forw
+            else if (!cpu->fBus[1].busy)
             {
                 cpu->fBus[1].tag = cpu->I_Queue.pd;
                 cpu->fBus[1].busy = 1;
@@ -1115,14 +1161,14 @@ APEX_INT_FU(APEX_CPU *cpu)
             {
                 cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
             }
-
+            cpu->pr.PR_File[cpu->INT_FU.pd].reg_invalid = 0;
             break;
         }
         case OPCODE_BZ:
         case OPCODE_BNZ:
         {
             cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm;
-            if(cpu->I_Queue.waitingForBranch)
+            if(cpu->I_Queue.waitingForBranch || (cpu->pr.PR_File[cpu->INT_FU.branch_reg].cc_flag == 0 ^ cpu->INT_FU.opcode == OPCODE_BZ))
             {
                 flush_instructions(cpu, cpu->INT_FU.pc);
                 cpu->waitingForBranch = 0;
@@ -1308,6 +1354,7 @@ APEX_LOP_FU(APEX_CPU *cpu)
         }
         }
         cpu->pr.PR_File[cpu->LOP_FU.pd].reg_invalid = 0;
+        cpu->LOP_FU.has_insn = FALSE;
     }
     else
     {
@@ -1509,12 +1556,13 @@ int do_commit(APEX_CPU *cpu)
     }
     }
     APEX_Instruction *instr = &cpu->code_memory[get_code_memory_index_from_pc(entry->pc_value)];
-    strcpy(cpu->commit.opcode, instr->opcode_str);
+    strcpy(cpu->commit.opcode_str, instr->opcode_str);
     cpu->commit.rd = instr->rd;
     cpu->commit.rs1 = instr->rs1;
     cpu->commit.rs2 = instr->rs2;
     cpu->commit.rs3 = instr->rs3;
     cpu->commit.imm = instr->imm;
+    cpu->commit.opcode = instr->opcode;
     print_stage_content("Commitment",&cpu->commit);
     removeROBHead(cpu);
     if (entry->instruction_type == HALT)
@@ -2160,8 +2208,51 @@ int getBIS_index(APEX_CPU *cpu, int pc_value)
 
 /*----------------------------------FLUSH instruction utilities start-----------------------------------*/
 
+void reset_decode_stage(APEX_CPU *cpu, CPU_Stage stage)
+{
+    switch(stage.opcode)
+    {
+        case OPCODE_MUL:
+        case OPCODE_ADD:
+        case OPCODE_DIV:
+        case OPCODE_SUB:
+        case OPCODE_XOR:
+        case OPCODE_OR:
+        case OPCODE_AND:
+        case OPCODE_LDR:
+        case OPCODE_CMP:
+        case OPCODE_ADDL:
+        case OPCODE_SUBL:
+        case OPCODE_LOAD:
+        case OPCODE_MOVC:
+        {
+            cpu->pr.PR_File[stage.pd].reg_invalid = 0;
+            break;
+        }
+        
+        case OPCODE_BZ:
+        case OPCODE_BNZ:
+        {
+            cpu->pr.PR_File[stage.branch_reg].reg_invalid = 0;
+            break;
+        }
+
+        default:
+        {
+            break;
+        }
+    }
+}
+
 void flush_instructions(APEX_CPU *cpu, int pc_value)
 {
+    reset_decode_stage(cpu,cpu->DR1);
+    reset_decode_stage(cpu,cpu->DR2);
+    cpu->prev_cc = cpu->INT_FU.branch_reg;
+    printf("\nPrev reg = %d\n", cpu->prev_cc);
+    cpu->fetch_from_next_cycle = TRUE;
+    cpu->DR1.has_insn = FALSE;
+    cpu->DR2.has_insn = FALSE;
     flush_bisEntries(cpu,pc_value);
 }
 
