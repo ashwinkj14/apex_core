@@ -309,7 +309,7 @@ create_code_memory(const char *filename, int *size)
         create_APEX_instruction(&code_memory[current_instruction], line);
         current_instruction++;
     }
-
+    instruction_size=current_instruction;
     free(line);
     fclose(fp);
     return code_memory;

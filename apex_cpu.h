@@ -23,6 +23,8 @@ typedef struct APEX_Instruction
     int imm;
 } APEX_Instruction;
 
+int instruction_size;
+
 typedef struct Forwarding_Bus
 {
     int tag;
@@ -31,6 +33,7 @@ typedef struct Forwarding_Bus
     int data;
     int cc;
 }FB;
+
 
 /* Format of Physical Register*/
 typedef struct Physical_Reg_format
@@ -68,6 +71,14 @@ typedef struct IQ_Entry
     int dest;
     int waitingForBranch;
     int bis_index;
+    int pc_value;
+    int opcode;
+    int prediction;
+    char opcode_str[128];
+    int rs1;
+    int rs2;
+    int rs3;
+    int rd;
 }IQ_Entry;
 
 typedef struct LSQ_Entry
@@ -93,7 +104,14 @@ typedef struct ROB_Entry
     int dest_arch_reg;
     int lsq_index;
     int mem_error_code;
+    int isExecuted;
 }ROB_Entry;
+
+typedef struct PC_exec
+{
+    int pc_value;
+    int is_exec;
+}PE;
 
 typedef struct BTB_Entry
 {
@@ -106,6 +124,7 @@ typedef struct BIS_Entry
 {
     int pc_value;
     int rob_index;
+    int is_exec;
 }BIS_Entry;
 
 typedef struct IQ
@@ -214,6 +233,9 @@ typedef struct APEX_CPU
     ROB rob;
     BTB btb;
     BIS bis;
+
+    PE *pe;
+    
 } APEX_CPU;
 
 //IQ
@@ -230,6 +252,14 @@ void addIQEntry(
     int dest,
     int waitingForBranch,
     int bis_index,
+    int pc_value,
+    int opcode,
+    int prediction,
+    char opcode_str[128],
+    int rs1,
+    int rs2,
+    int rs3,
+    int rd,
     APEX_CPU *cpu
     );
 
@@ -290,7 +320,7 @@ int isBTBFull(APEX_CPU *cpu);
 
 //BIS
 int isBISFull(APEX_CPU *cpu);
-void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index);
+void addBISEntry(APEX_CPU *cpu, int pc_value, int rob_index, int is_exec);
 void updateBTBEntry(int pc_value, int prediction, APEX_CPU *cpu);
 
 //FLUSH

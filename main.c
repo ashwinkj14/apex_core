@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-//#include "apex_cpu.c"
+#include "apex_cpu.c"
 #include "apex_cpu.h"
 
 int
