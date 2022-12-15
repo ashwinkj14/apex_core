@@ -721,7 +721,7 @@ APEX_DR1(APEX_CPU *cpu)
                     cpu->pr.PR_File[cpu->DR1.ps2].reg_invalid = 0;
                 }
             }
-
+            cpu->DR1.dest_arch_reg = cpu->DR1.rd;
             cpu->DR1.prev_phy_reg = cpu->rt.reg[cpu->DR1.rd];
             cpu->DR1.pd = free;
             break;
@@ -1663,15 +1663,18 @@ APEX_INT_FU(APEX_CPU *cpu)
         }
         case OPCODE_CMP: // need to discuss
         {
-
+            
             if (cpu->INT_FU.rs1_value == cpu->INT_FU.rs2_value)
             {
+                cpu->INT_FU.result_buffer = 1;
                 cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 1;
             }
             else
             {
+                cpu->INT_FU.result_buffer = 0;
                 cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
             }
+            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
 
             if (!cpu->fBus[0].busy)
             {
