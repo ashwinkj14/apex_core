@@ -324,11 +324,15 @@ void print_fwd_bus(APEX_CPU *cpu)
     if (cpu->fBus[0].busy)
     {
         tag = cpu->fBus[0].tag;
+        if (tag < 0)
+        {
+            tag = (tag * -1) - 1;
+        }
         value = cpu->fBus[0].data;
+        printf("Tag = %d\n", tag);
+        printf("Value = %d", value);
+        printf("\n");
     }
-    printf("Tag = %d\n", tag);
-    printf("Value = %d", value);
-    printf("\n");
 
     tag = 0;
     value = 0;
@@ -336,11 +340,15 @@ void print_fwd_bus(APEX_CPU *cpu)
     if (cpu->fBus[1].busy)
     {
         tag = cpu->fBus[1].tag;
+        if (tag < 0)
+        {
+            tag = (tag * -1) - 1;
+        }
         value = cpu->fBus[1].data;
+        printf("Tag = %d\n", tag);
+        printf("Value = %d\n", value);
+        printf("\n");
     }
-    printf("Tag = %d\n", tag);
-    printf("Value = %d\n", value);
-    printf("\n");
 }
 
 /*
@@ -356,6 +364,7 @@ APEX_fetch(APEX_CPU *cpu)
     {
         strcpy(cpu->fetch.opcode_str, "NOP");
         cpu->fetch.opcode = OPCODE_NOP;
+        cpu->fetch.pc = 0;
         if (ENABLE_DEBUG_MESSAGES)
         {
             print_stage_content("Fetch", &cpu->fetch);
@@ -1729,7 +1738,6 @@ APEX_INT_FU(APEX_CPU *cpu)
                             cpu->waitingForBranch = 0;
                             cpu->pc = cpu->conditional_pc;
                         }
-                        
                     }
                     else
                     {
@@ -2168,6 +2176,7 @@ int do_commit(APEX_CPU *cpu)
         print_stage_empty_state("Commitment", &cpu->commit);
         return 0;
     }
+    cpu->commit.pc = entry->pc_value;
     switch (entry->instruction_type)
     {
     case R2R:
@@ -2196,7 +2205,7 @@ int do_commit(APEX_CPU *cpu)
             APEX_D_cache(cpu);
             if (entry->lsq_index == cpu->lsq.head)
             {
-                print_stage_empty_state("Commitment", &cpu->commit);
+                print_stage_empty_state("Commitment(D-cache)", &cpu->commit);
                 return 0;
             }
             cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
@@ -2213,7 +2222,7 @@ int do_commit(APEX_CPU *cpu)
             APEX_D_cache(cpu);
             if (entry->lsq_index == cpu->lsq.head)
             {
-                print_stage_empty_state("Commitment", &cpu->commit);
+                print_stage_empty_state("Commitment(D-cache)", &cpu->commit);
                 return 0;
             }
         }
@@ -2225,7 +2234,8 @@ int do_commit(APEX_CPU *cpu)
     {
         int arr_index = (entry->pc_value / 4) - 1000;
         int is_executed = cpu->pe[arr_index].is_exec;
-        if(!is_executed){
+        if (!is_executed)
+        {
             print_stage_empty_state("Commitment", &cpu->commit);
             return 0;
         }
@@ -2257,13 +2267,21 @@ int do_commit(APEX_CPU *cpu)
     }
     }
     APEX_Instruction *instr = &cpu->code_memory[get_code_memory_index_from_pc(entry->pc_value)];
-    strcpy(cpu->commit.opcode_str, instr->opcode_str);
     cpu->commit.rd = instr->rd;
     cpu->commit.rs1 = instr->rs1;
     cpu->commit.rs2 = instr->rs2;
     cpu->commit.rs3 = instr->rs3;
     cpu->commit.imm = instr->imm;
-    cpu->commit.opcode = instr->opcode;
+    if(!entry->pc_value)
+    {
+        strcpy(cpu->commit.opcode_str, "NOP");
+        cpu->commit.opcode = OPCODE_NOP;
+    }else
+    {
+        strcpy(cpu->commit.opcode_str, instr->opcode_str);
+        cpu->commit.opcode = instr->opcode;
+    }
+    
     print_stage_content("Commitment", &cpu->commit);
     removeROBHead(cpu);
     if (entry->instruction_type == HALT)
