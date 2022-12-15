@@ -34,7 +34,8 @@
 #define LOAD 2
 #define STORE 3
 #define HALT 4
-#define SKIP 5
+#define BRANCH 5
+#define NOP 6
 
 /* Numeric OPCODE identifiers for instructions */
 #define OPCODE_ADD 0x0

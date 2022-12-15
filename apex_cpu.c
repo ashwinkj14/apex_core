@@ -359,7 +359,7 @@ APEX_fetch(APEX_CPU *cpu)
         cpu->fetch.opcode = OPCODE_NOP;
         if (ENABLE_DEBUG_MESSAGES)
         {
-            print_stage_content("Fetch - bf", &cpu->fetch);
+            print_stage_content("Fetch", &cpu->fetch);
         }
         cpu->DR1 = cpu->fetch;
         return;
@@ -738,6 +738,7 @@ APEX_DR1(APEX_CPU *cpu)
                     cpu->pr.PR_File[cpu->DR1.ps1].reg_invalid = 0;
                 }
             }
+            cpu->waitingForBranch = 1;
             break;
             /*Must do: check if the forwarding bus has any valid src tag or data and update the IQ so that as soon as it enters into the issue queue it is ready to be processed*/
         }
@@ -1015,7 +1016,7 @@ APEX_DR2(APEX_CPU *cpu)
             fu_type = INT_U;
             src1_valid = 1;
             src2_valid = 1;
-            instruction_type = SKIP;
+            instruction_type = NOP;
             break;
         }
 
@@ -1206,7 +1207,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_valid = !cpu->pr.PR_File[cpu->DR2.ps1].reg_invalid;
             src1_value = cpu->pr.PR_File[cpu->DR2.ps1].phy_Reg;
             src2_valid = 1;
-            instruction_type = SKIP;
+            instruction_type = NOP;
 
             break;
         }
@@ -1271,7 +1272,7 @@ APEX_DR2(APEX_CPU *cpu)
             src1_tag = cpu->DR2.branch_reg;
             src1_valid = !cpu->pr.PR_File[cpu->DR2.branch_reg].reg_invalid;
             src2_valid = 1;
-            instruction_type = SKIP;
+            instruction_type = BRANCH;
             cpu->new_bis = 1;
             break;
         }
@@ -1887,6 +1888,9 @@ APEX_INT_FU(APEX_CPU *cpu)
             cpu->conditional_pc = cpu->INT_FU.pc + cpu->INT_FU.imm + cpu->INT_FU.rs1_value;
             cpu->pe[arr_index].pc_value = cpu->INT_FU.pc;
             cpu->pe[arr_index].is_exec = 1;
+            cpu->pc = cpu->conditional_pc;
+            cpu->fetch_from_next_cycle = TRUE;
+            cpu->waitingForBranch = 0;
             cpu->INT_FU.has_insn = FALSE;
             break;
         }
@@ -2223,11 +2227,23 @@ int do_commit(APEX_CPU *cpu)
         break;
     }
 
-    case SKIP:
     case HALT:
+    case NOP:
+    {
+        int arr_index = (entry->pc_value / 4) - 1000;
+        int is_executed = cpu->pe[arr_index].is_exec;
+        if(!is_executed){
+            return 0;
+        }
+        break;
+    }
+    case BRANCH:
     {
         int i = cpu->bis.head;
         int tail = cpu->bis.tail;
+        if (i==-1){
+
+        }
         while (i <= tail)
         {
             BIS_Entry *bis_entry = cpu->bis.entry[i];
