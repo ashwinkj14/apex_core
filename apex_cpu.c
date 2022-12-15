@@ -1255,19 +1255,19 @@ APEX_DR2(APEX_CPU *cpu)
                 {
                     if (cpu->DR2.branch_prediction)
                     {
-                        cpu->fetch_from_next_cycle = TRUE;
                         BTB_Entry *entry = getBTBEntry(cpu->DR2.pc, cpu);
                         if (entry != NULL)
                         {
                             cpu->DR2.waitingForBranch = 0;
                             cpu->waitingForBranch = 0;
-            }
+                        }
                         else
                         {
                             cpu->DR2.waitingForBranch = 1;
                             cpu->waitingForBranch = 1;
+                            cpu->fetch_from_next_cycle = TRUE;
+                            cpu->DR1.has_insn = FALSE;
                         }
-                        cpu->DR1.has_insn = FALSE;
                     }
                     else
                     {
@@ -3096,7 +3096,7 @@ void APEX_cpu_run(APEX_CPU *cpu)
         {
             user_prompt_val = 'r';
             printf("Press any key to advance CPU Clock or <q> to quit:\n");
-            scanf("%c", &user_prompt_val);
+            // scanf("%c", &user_prompt_val);
 
             if ((user_prompt_val == 'Q') || (user_prompt_val == 'q'))
             {
