@@ -136,6 +136,10 @@ set_opcode_str(const char *opcode_str)
     {
         return OPCODE_CMP;
     }
+    if (strcmp(opcode_str, "NOP") == 0)
+    {
+        return OPCODE_NOP;
+    }
 
     assert(0 && "Invalid opcode");
     return 0;
@@ -182,6 +186,12 @@ create_APEX_instruction(APEX_Instruction *ins, char *buffer)
         strcpy(tokens[token_num], token);
         token_num++;
         token = strtok(NULL, ",");
+    }
+
+    int size = strlen(top_level_tokens[0]);
+    if(size>0 && top_level_tokens[0][size-1] == '\n')
+    {
+        top_level_tokens[0][size-1] = '\0';
     }
 
     strcpy(ins->opcode_str, top_level_tokens[0]);
