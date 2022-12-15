@@ -82,7 +82,6 @@ static int getFreeRegFromPR(APEX_CPU *cpu)
     int free = cpu->pr.PR_File[index].free;
 
     cpu->pr.PR_File[free].reg_invalid = 1;
-    printf("\n free = %d , invalid = %d\n", free, cpu->pr.PR_File[free].reg_invalid);
     return free;
 }
 
@@ -689,7 +688,6 @@ APEX_DR1(APEX_CPU *cpu)
         {
             setSrcRegWithPR(cpu->DR1.rs1, cpu->DR1.rs2, -1, cpu);
             int free = getFreeRegFromPR(cpu);
-            printf("\nDR1 invalid = %d\n", cpu->pr.PR_File[free].reg_invalid);
             if (cpu->fBus[0].busy)
             {
                 if (cpu->fBus[0].tag == cpu->DR1.ps1)
@@ -747,8 +745,6 @@ APEX_DR1(APEX_CPU *cpu)
         {
             // prediction
             cpu->DR1.branch_reg = cpu->prev_cc;
-            printf("\nprev_cc = %d\n", cpu->DR1.branch_reg);
-            printf("\nBranch invalid= %d\n", cpu->pr.PR_File[cpu->DR1.branch_reg].reg_invalid);
             if (cpu->fBus[0].busy)
             {
                 if (cpu->fBus[0].tag == cpu->DR1.branch_reg && cpu->fBus[0].isDataFwd)
@@ -791,7 +787,6 @@ APEX_DR1(APEX_CPU *cpu)
                 cpu->DR1.waitingForBranch = 1;
                 cpu->waitingForBranch = 1;
             }
-            printf("\nBranch invalid= %d\n", cpu->pr.PR_File[cpu->DR1.branch_reg].reg_invalid);
             break;
         }
         case OPCODE_HALT:
@@ -882,7 +877,6 @@ APEX_DR2(APEX_CPU *cpu)
             src2_valid = !cpu->pr.PR_File[cpu->DR2.ps2].reg_invalid;
             src2_value = cpu->pr.PR_File[cpu->DR2.ps2].phy_Reg;
             dest = cpu->DR2.pd;
-            printf("\nDR2 invalid = %d\n", cpu->pr.PR_File[cpu->DR2.pd].reg_invalid);
             break;
         }
 
@@ -1230,7 +1224,6 @@ APEX_DR2(APEX_CPU *cpu)
                     cpu->pr.PR_File[cpu->DR2.branch_reg].reg_invalid = 0;
                 }
             }
-            printf("\nInvalid = %d\n", cpu->pr.PR_File[cpu->DR2.branch_reg].reg_invalid);
             if (cpu->pr.PR_File[cpu->DR2.branch_reg].reg_invalid == 0)
             {
                 if (cpu->pr.PR_File[cpu->DR2.branch_reg].cc_flag == 1 ^ cpu->DR2.opcode == OPCODE_BZ)
