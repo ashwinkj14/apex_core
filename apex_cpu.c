@@ -275,7 +275,7 @@ print_stage_content(const char *name, const CPU_Stage *stage)
 static void
 print_reg_file(const APEX_CPU *cpu)
 {
-    printf("----------\n%s\n----------\n", "Registers:");
+    printf("\n----------\n%s\n----------\n", "Registers:");
 
     for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
@@ -287,7 +287,7 @@ print_reg_file(const APEX_CPU *cpu)
 
 void print_rename_table(APEX_CPU *cpu)
 {
-    printf("--------------------\n%s\n--------------------\n", "Rename Table:");
+    printf("\n-------------\n%s\n-------------\n", "Rename Table:");
 
     for (int i = 0; i < REG_FILE_SIZE; ++i)
     {
@@ -299,7 +299,7 @@ void print_rename_table(APEX_CPU *cpu)
 
 void print_physical_reg_file(APEX_CPU *cpu)
 {
-    printf("--------------------\n%s\n--------------------\n", "Physical Register File:");
+    printf("\n-----------------------\n%s\n-----------------------\n", "Physical Register File:");
 
     for (int i = 0; i < PR_FILE_SIZE / 2; ++i)
     {
@@ -320,7 +320,7 @@ void print_fwd_bus(APEX_CPU *cpu)
 {
     int tag = 0;
     int value = 0;
-    printf("\n----------------\n%s\n----------------\n", "Fowarding bus 0 :");
+    printf("\n-----------------\n%s\n-----------------\n", "Fowarding bus 0 :");
     if (cpu->fBus[0].busy)
     {
         tag = cpu->fBus[0].tag;
@@ -332,7 +332,7 @@ void print_fwd_bus(APEX_CPU *cpu)
 
     tag = 0;
     value = 0;
-    printf("\n----------------\n%s\n---------------\n", "Fowarding bus 1 :");
+    printf("\n-----------------\n%s\n-----------------\n", "Fowarding bus 1 :");
     if (cpu->fBus[1].busy)
     {
         tag = cpu->fBus[1].tag;
@@ -2226,6 +2226,7 @@ int do_commit(APEX_CPU *cpu)
         int arr_index = (entry->pc_value / 4) - 1000;
         int is_executed = cpu->pe[arr_index].is_exec;
         if(!is_executed){
+            print_stage_empty_state("Commitment", &cpu->commit);
             return 0;
         }
         break;
@@ -2234,9 +2235,6 @@ int do_commit(APEX_CPU *cpu)
     {
         int i = cpu->bis.head;
         int tail = cpu->bis.tail;
-        if (i==-1){
-
-        }
         while (i <= tail)
         {
             BIS_Entry *bis_entry = cpu->bis.entry[i];
@@ -2272,7 +2270,6 @@ int do_commit(APEX_CPU *cpu)
     {
         return 1;
     }
-    print_stage_empty_state("Commitment", &cpu->commit);
     return 0;
 }
 
