@@ -196,7 +196,7 @@ typedef struct APEX_CPU
     int pc;                        /* Current program counter */
     int clock;                     /* Clock cycles elapsed */
     int insn_completed;            /* Instructions retired */
-    int regs[REG_FILE_SIZE];       /* Integer register file */
+    int regs[REG_FILE_SIZE+1];       /* Integer register file */
     int code_memory_size;          /* Number of instruction in the input file */
     APEX_Instruction *code_memory; /* Code Memory */
     int data_memory[DATA_MEMORY_SIZE]; /* Data Memory */

@@ -320,6 +320,7 @@ void print_fwd_bus(APEX_CPU *cpu)
 {
     int tag = 0;
     int value = 0;
+    int cc = 0;
     printf("\n-----------------\n%s\n-----------------\n", "Fowarding bus 0 :");
     if (cpu->fBus[0].busy)
     {
@@ -329,13 +330,13 @@ void print_fwd_bus(APEX_CPU *cpu)
             tag = (tag * -1) - 1;
         }
         value = cpu->fBus[0].data;
+        cc = cpu->fBus[0].cc;
         printf("Tag = %d\n", tag);
-        printf("Value = %d", value);
+        printf("Data = %d\n", value);
+        printf("CC = %d", cc);
         printf("\n");
     }
 
-    tag = 0;
-    value = 0;
     printf("\n-----------------\n%s\n-----------------\n", "Fowarding bus 1 :");
     if (cpu->fBus[1].busy)
     {
@@ -345,8 +346,10 @@ void print_fwd_bus(APEX_CPU *cpu)
             tag = (tag * -1) - 1;
         }
         value = cpu->fBus[1].data;
+        cc = cpu->fBus[1].cc;
         printf("Tag = %d\n", tag);
-        printf("Value = %d\n", value);
+        printf("Data = %d\n", value);
+        printf("CC = %d", cc);
         printf("\n");
     }
 }
@@ -829,6 +832,7 @@ APEX_DR2(APEX_CPU *cpu)
 
         if (isIQFull(cpu) || isLSQFull(cpu) || isROBFull(cpu) || ((cpu->DR2.opcode == OPCODE_BNZ || cpu->DR2.opcode == OPCODE_BZ) && isBISFull(cpu)))
         {
+            print_stage_content("DR2", &cpu->DR2);
             return;
         }
         int fu_type = 0;
@@ -1674,7 +1678,6 @@ APEX_INT_FU(APEX_CPU *cpu)
                 cpu->INT_FU.result_buffer = 0;
                 cpu->pr.PR_File[cpu->INT_FU.pd].cc_flag = 0;
             }
-            cpu->pr.PR_File[cpu->INT_FU.pd].phy_Reg = cpu->INT_FU.result_buffer;
 
             if (!cpu->fBus[0].busy)
             {
@@ -1725,8 +1728,11 @@ APEX_INT_FU(APEX_CPU *cpu)
                     flush_instructions(cpu, cpu->INT_FU.pc);
                     updateBTBEntry(cpu->INT_FU.pc, 0, cpu);
                 }
-                cpu->waitingForBranch = 0;
-                cpu->pc = cpu->INT_FU.pc + 4;
+                if(cpu->waitingForBranch)
+                {
+                    cpu->waitingForBranch = 0;
+                    cpu->pc = cpu->INT_FU.pc + 4;
+                }
             }
             else
             {
@@ -2102,6 +2108,7 @@ APEX_MUL3_FU(APEX_CPU *cpu)
             cpu->MUL3_FU.has_insn = FALSE;
         }
         cpu->MUL4_FU = cpu->MUL3_FU;
+        cpu->MUL4_FU.has_insn = TRUE;
     }
     else
     {
@@ -2196,6 +2203,7 @@ int do_commit(APEX_CPU *cpu)
         {
             cpu->regs[entry->dest_arch_reg] = cpu->pr.PR_File[entry->dest_phy_reg].phy_Reg;
             cpu->pr.PR_File[entry->prev_phy_reg].reg_invalid = 1;
+            cpu->regs[8] = cpu->pr.PR_File[entry->dest_phy_reg].cc_flag;
             enqueueFreeList(entry->prev_phy_reg, cpu);
         }
         break;
@@ -3113,14 +3121,16 @@ void APEX_cpu_run(APEX_CPU *cpu)
 
         cpu->fBus[0].busy = 0;
         cpu->fBus[0].isDataFwd = 0;
+        cpu->fBus[0].cc = 0;
         cpu->fBus[1].busy = 0;
         cpu->fBus[1].isDataFwd = 0;
+        cpu->fBus[1].cc = 0;
 
         if (cpu->single_step)
         {
             user_prompt_val = 'r';
             printf("Press any key to advance CPU Clock or <q> to quit:\n");
-            scanf("%c", &user_prompt_val);
+            //scanf("%c", &user_prompt_val);
 
             if ((user_prompt_val == 'Q') || (user_prompt_val == 'q'))
             {
